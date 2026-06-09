@@ -1,0 +1,2857 @@
+import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+
+// ==========================================
+// --- GLOBAL SOUND SYSTEM (SINGLETON API) ---
+// ==========================================
+let audioCtx = null;
+const getAudioContext = () => {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  return audioCtx;
+};
+
+const playSoundEffect = (type) => {
+  try {
+    const ctx = getAudioContext();
+    if (ctx.state === 'suspended') ctx.resume(); // Wajib untuk interaksi browser modern
+    
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    
+    if (type === 'click') {
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(550, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(280, ctx.currentTime + 0.15);
+      gain.gain.setValueAtTime(0.25, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.15);
+    } else if (type === 'success') {
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(523.25, ctx.currentTime); // C5
+      osc.frequency.setValueAtTime(659.25, ctx.currentTime + 0.1); // E5
+      osc.frequency.setValueAtTime(783.99, ctx.currentTime + 0.2); // G5
+      gain.gain.setValueAtTime(0.2, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.45);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.45);
+    } else if (type === 'error') {
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(200, ctx.currentTime);
+      osc.frequency.linearRampToValueAtTime(130, ctx.currentTime + 0.2);
+      gain.gain.setValueAtTime(0.2, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.25);
+    } else if (type === 'fanfare') {
+      const notes = [261.63, 329.63, 392.00, 523.25, 659.25, 783.99, 1046.50];
+      notes.forEach((freq, idx) => {
+        const oscN = ctx.createOscillator();
+        const gainN = ctx.createGain();
+        oscN.connect(gainN);
+        gainN.connect(ctx.destination);
+        oscN.type = 'triangle';
+        oscN.frequency.setValueAtTime(freq, ctx.currentTime + idx * 0.1);
+        gainN.gain.setValueAtTime(0.12, ctx.currentTime + idx * 0.1);
+        gainN.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + idx * 0.1 + 0.3);
+        oscN.start(ctx.currentTime + idx * 0.1);
+        oscN.stop(ctx.currentTime + idx * 0.1 + 0.35);
+      });
+    }
+  } catch (e) {
+    console.log("Audio blocked", e);
+  }
+};
+
+// ==========================================
+// --- INLINE SVG ASSETS (KIDS ADVENTURE) ---
+// ==========================================
+
+const CloudSvg = ({ color = '#FFFFFF' }) => (
+  <svg viewBox="0 0 100 60" className="w-full h-full">
+    <path d="M 20,40 C 20,30 30,20 45,20 C 55,20 65,25 70,32 C 78,30 88,35 88,45 C 88,52 80,58 70,58 L 25,58 C 15,58 20,48 20,40 Z" fill={color} />
+  </svg>
+);
+
+const StarSvg = () => (
+  <svg viewBox="0 0 100 100" className="w-full h-full filter drop-shadow-[0_4px_6px_rgba(253,224,71,0.5)]">
+    <polygon points="50,5 64,36 98,36 70,57 81,91 50,70 19,91 30,57 2,36 36,36" fill="#FFD93D" stroke="#1E293B" strokeWidth="6" strokeLinejoin="round" />
+    <circle cx="42" cy="40" r="4" fill="#FFFFFF" />
+  </svg>
+);
+
+const GaraSvg = ({ pose = 'welcome' }) => {
+  return (
+    <svg viewBox="0 0 512 512" className="w-full h-full filter drop-shadow-[0_8px_8px_rgba(0,0,0,0.15)]">
+      <motion.path 
+        d="M 120,240 C 60,200 40,280 80,340 C 110,380 150,340 150,300" 
+        fill="#FFD93D" 
+        stroke="#1E293B" 
+        strokeWidth="10" 
+        strokeLinecap="round"
+        animate={pose === 'victory' ? { rotate: [0, -20, 0], y: [0, -15, 0] } : { rotate: [0, -5, 0] }}
+        transition={{ repeat: Infinity, duration: 1.5, ease: "easeInOut" }}
+      />
+      <motion.path 
+        d="M 392,240 C 452,200 472,280 432,340 C 402,380 362,340 362,300" 
+        fill="#FFD93D" 
+        stroke="#1E293B" 
+        strokeWidth="10" 
+        strokeLinecap="round"
+        transform-origin="362px 300px"
+        animate={pose === 'welcome' 
+          ? { rotate: [0, 25, -5, 25, 0] } 
+          : pose === 'victory' 
+            ? { rotate: [0, 20, 0], y: [0, -15, 0] } 
+            : { rotate: [0, 5, 0] }
+        }
+        transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}
+      />
+      <circle cx="256" cy="280" r="120" fill="#FFD93D" stroke="#1E293B" strokeWidth="12" />
+      <path d="M 170,280 C 170,350 256,390 256,390 C 256,390 342,350 342,280 C 342,240 256,230 256,230 C 256,230 170,240 170,280 Z" fill="#F8FAFC" stroke="#1E293B" strokeWidth="10" />
+      <rect x="190" y="385" width="25" height="50" rx="10" fill="#FF8E3C" stroke="#1E293B" strokeWidth="10" />
+      <circle cx="190" cy="435" r="15" fill="#FF8E3C" stroke="#1E293B" strokeWidth="8" />
+      <circle cx="215" cy="435" r="15" fill="#FF8E3C" stroke="#1E293B" strokeWidth="8" />
+      <rect x="295" y="385" width="25" height="50" rx="10" fill="#FF8E3C" stroke="#1E293B" strokeWidth="10" />
+      <circle cx="295" cy="435" r="15" fill="#FF8E3C" stroke="#1E293B" strokeWidth="8" />
+      <circle cx="320" cy="435" r="15" fill="#FF8E3C" stroke="#1E293B" strokeWidth="8" />
+      <circle cx="206" cy="230" r="32" fill="#F8FAFC" stroke="#1E293B" strokeWidth="10" />
+      <circle cx="212" cy="224" r="16" fill="#1E293B" />
+      <circle cx="205" cy="216" r="6" fill="#FFFFFF" />
+      <circle cx="306" cy="230" r="32" fill="#F8FAFC" stroke="#1E293B" strokeWidth="10" />
+      <circle cx="300" cy="224" r="16" fill="#1E293B" />
+      <circle cx="293" cy="216" r="6" fill="#FFFFFF" />
+      <motion.path 
+        d="M 230,250 Q 256,295 282,250 Z" 
+        fill="#FF8E3C" 
+        stroke="#1E293B" 
+        strokeWidth="10" 
+        strokeLinejoin="round"
+        animate={pose === 'welcome' ? { scaleY: [1, 1.25, 1] } : {}}
+        transition={{ repeat: Infinity, duration: 1.5 }}
+      />
+      <path d="M 236,164 Q 256,110 256,110 Q 256,110 276,164 Z" fill="#FFD93D" stroke="#1E293B" strokeWidth="8" strokeLinejoin="round" />
+      <path d="M 210,175 Q 220,130 236,164 Z" fill="#FFD93D" stroke="#1E293B" strokeWidth="8" strokeLinejoin="round" />
+      <path d="M 302,175 Q 292,130 276,164 Z" fill="#FFD93D" stroke="#1E293B" strokeWidth="8" strokeLinejoin="round" />
+      <path d="M 162,185 C 162,185 256,160 350,185 L 344,205 C 344,205 256,180 168,205 Z" fill="#FFFFFF" stroke="#1E293B" strokeWidth="8" />
+      <path d="M 162,185 C 162,185 256,160 350,185 L 347,195 C 347,195 256,170 165,195 Z" fill="#EF4444" />
+      <path d="M 345,190 Q 375,170 365,205 Q 345,210 345,190 Z" fill="#EF4444" stroke="#1E293B" strokeWidth="6" />
+      <path d="M 345,195 Q 380,210 355,225 Q 340,210 345,195 Z" fill="#FFFFFF" stroke="#1E293B" strokeWidth="6" />
+    </svg>
+  );
+};
+
+const SilaIconSvg = ({ type }) => {
+  const styles = "w-16 h-16 filter drop-shadow-[0_4px_4px_rgba(0,0,0,0.1)]";
+  switch(type) {
+    case 'bintang':
+      return (
+        <svg viewBox="0 0 100 100" className={styles}>
+          <polygon points="50,5 64,36 98,36 70,57 81,91 50,70 19,91 30,57 2,36 36,36" fill="#FFD93D" stroke="#1E293B" strokeWidth="6" />
+        </svg>
+      );
+    case 'rantai':
+      return (
+        <svg viewBox="0 0 100 100" className={styles}>
+          <circle cx="40" cy="50" r="20" fill="none" stroke="#D97706" strokeWidth="12" />
+          <circle cx="60" cy="50" r="20" fill="none" stroke="#D97706" strokeWidth="12" />
+        </svg>
+      );
+    case 'beringin':
+      return (
+        <svg viewBox="0 0 100 100" className={styles}>
+          <path d="M 30,70 C 20,60 20,40 35,30 C 45,20 65,20 75,35 C 85,45 80,65 70,70 Z" fill="#059669" stroke="#1E293B" strokeWidth="6" />
+          <rect x="46" y="60" width="8" height="20" fill="#78350F" stroke="#1E293B" strokeWidth="5" />
+        </svg>
+      );
+    case 'banteng':
+      return (
+        <svg viewBox="0 0 100 100" className={styles}>
+          <circle cx="50" cy="55" r="25" fill="#EF4444" stroke="#1E293B" strokeWidth="6" />
+          <path d="M 30,35 Q 25,20 40,30 Q 50,38 50,45" fill="none" stroke="#1E293B" strokeWidth="8" strokeLinecap="round" />
+          <path d="M 70,35 Q 75,20 60,30 Q 50,38 50,45" fill="none" stroke="#1E293B" strokeWidth="8" strokeLinecap="round" />
+        </svg>
+      );
+    case 'padi':
+      return (
+        <svg viewBox="0 0 100 100" className={styles}>
+          <path d="M 40,80 Q 50,40 70,20" fill="none" stroke="#10B981" strokeWidth="6" strokeLinecap="round" />
+          <circle cx="45" cy="60" r="6" fill="#FBBF24" stroke="#1E293B" strokeWidth="3" />
+          <circle cx="55" cy="50" r="6" fill="#FBBF24" stroke="#1E293B" strokeWidth="3" />
+          <circle cx="60" cy="35" r="6" fill="#FBBF24" stroke="#1E293B" strokeWidth="3" />
+        </svg>
+      );
+    default:
+      return null;
+  }
+};
+
+const GarudaShieldIllustrationSvg = ({ activeSila = 0 }) => (
+  <svg viewBox="0 0 400 400" className="w-full h-full filter drop-shadow-[0_12px_12px_rgba(0,0,0,0.15)]">
+    <circle cx="200" cy="200" r="180" fill="#FEF3C7" opacity="0.4" />
+    <path d="M 200,80 C 130,50 100,120 70,220 C 60,250 90,260 110,240 L 150,200 L 150,300 C 150,340 180,360 200,380 C 220,360 250,340 250,300 L 250,200 L 290,240 C 310,260 340,250 330,220 C 300,120 270,50 200,80 Z" fill="#FBBF24" stroke="#1E293B" strokeWidth="8" strokeLinejoin="round" />
+    <path d="M 90,160 L 140,180 M 80,190 L 140,200 M 260,180 L 310,160 M 260,200 L 320,190" stroke="#1E293B" strokeWidth="4" strokeLinecap="round" />
+    <rect x="150" y="325" width="100" height="15" rx="5" fill="#E2E8F0" stroke="#1E293B" strokeWidth="6" />
+    <text x="200" y="336" fill="#1E293B" fontSize="10" fontWeight="bold" textAnchor="middle" fontFamily="sans-serif">BHINNEKA TUNGGAL IKA</text>
+    <path d="M 150,150 L 250,150 C 250,150 260,220 200,260 C 140,220 150,150 150,150 Z" fill="#EF4444" stroke="#1E293B" strokeWidth="8" strokeLinejoin="round" />
+    <line x1="150" y1="200" x2="250" y2="200" stroke="#1E293B" strokeWidth="6" />
+    <circle cx="200" cy="200" r="22" fill={activeSila === 1 ? '#FEF08A' : '#F1F5F9'} stroke="#1E293B" strokeWidth="4" />
+    <polygon points="200,185 204,196 215,196 207,203 210,214 200,207 190,214 193,203 185,196 196,196" fill="#F59E0B" />
+    <circle cx="225" cy="235" r="14" fill={activeSila === 2 ? '#FEF08A' : '#E2E8F0'} stroke="#1E293B" strokeWidth="3" />
+    <circle cx="225" cy="235" r="9" fill="none" stroke="#B45309" strokeWidth="3" />
+    <circle cx="225" cy="175" r="14" fill={activeSila === 3 ? '#FEF08A' : '#E2E8F0'} stroke="#1E293B" strokeWidth="3" />
+    <path d="M 221,180 C 218,172 225,166 229,172 Z" fill="#047857" />
+    <circle cx="175" cy="175" r="14" fill={activeSila === 4 ? '#FEF08A' : '#E2E8F0'} stroke="#1E293B" strokeWidth="3" />
+    <circle cx="175" cy="177" r="6" fill="#1E293B" />
+    <circle cx="175" cy="235" r="14" fill={activeSila === 5 ? '#FEF08A' : '#E2E8F0'} stroke="#1E293B" strokeWidth="3" />
+    <path d="M 172,230 L 178,240" stroke="#F59E0B" strokeWidth="2" />
+  </svg>
+);
+
+const IslandPancasilaSvg = () => (
+  <svg viewBox="0 0 120 120" className="w-20 h-20">
+    <path d="M 20,60 Q 40,20 60,20 Q 80,20 100,60 Q 90,100 60,100 Q 30,100 20,60 Z" fill="#FBBF24" stroke="#1E293B" strokeWidth="6" />
+    <polygon points="60,35 65,48 78,48 68,57 72,70 60,62 48,70 52,57 42,48 55,48" fill="#FFF" stroke="#1E293B" strokeWidth="4" />
+    <path d="M 25,60 C 35,55 45,65 60,60 C 75,55 85,65 95,60" fill="none" stroke="#D97706" strokeWidth="4" />
+  </svg>
+);
+
+const IslandRumahSvg = () => (
+  <svg viewBox="0 0 120 120" className="w-20 h-20">
+    <path d="M 20,60 Q 40,20 60,20 Q 80,20 100,60 Q 90,100 60,100 Q 30,100 20,60 Z" fill="#34D399" stroke="#1E293B" strokeWidth="6" />
+    <rect x="45" y="45" width="30" height="25" fill="#FFF" stroke="#1E293B" strokeWidth="4" />
+    <polygon points="40,45 60,28 80,45" fill="#EF4444" stroke="#1E293B" strokeWidth="4" />
+  </svg>
+);
+
+const IslandFestivalSvg = () => (
+  <svg viewBox="0 0 120 120" className="w-20 h-20">
+    <path d="M 20,60 Q 40,20 60,20 Q 80,20 100,60 Q 90,100 60,100 Q 30,100 20,60 Z" fill="#60A5FA" stroke="#1E293B" strokeWidth="6" />
+    <polygon points="60,30 45,65 75,65" fill="#FBBF24" stroke="#1E293B" strokeWidth="4" />
+    <path d="M 35,40 L 45,30 M 85,40 L 75,30" stroke="#1E293B" strokeWidth="4" strokeLinecap="round" />
+  </svg>
+);
+
+const IslandHijauSvg = () => (
+  <svg viewBox="0 0 120 120" className="w-20 h-20">
+    <path d="M 20,60 Q 40,20 60,20 Q 80,20 100,60 Q 90,100 60,100 Q 30,100 20,60 Z" fill="#059669" stroke="#1E293B" strokeWidth="6" />
+    <circle cx="50" cy="45" r="14" fill="#34D399" stroke="#1E293B" strokeWidth="4" />
+    <rect x="46" y="55" width="8" height="15" fill="#78350F" stroke="#1E293B" strokeWidth="4" />
+    <circle cx="70" cy="50" r="10" fill="#34D399" stroke="#1E293B" strokeWidth="4" />
+    <rect x="67" y="58" width="6" height="12" fill="#78350F" stroke="#1E293B" strokeWidth="4" />
+  </svg>
+);
+
+const NusantaraMapSvg = () => (
+  <svg viewBox="0 0 1000 450" className="w-full h-full opacity-35">
+    {/* Sumatra */}
+    <path d="M 100,100 L 180,180 L 250,220 L 190,240 L 120,180 L 80,120 Z" fill="#86EFAC" stroke="#22C55E" strokeWidth="3" />
+    {/* Jawa */}
+    <path d="M 220,280 L 350,290 L 400,280 L 300,270 Z" fill="#86EFAC" stroke="#22C55E" strokeWidth="3" />
+    {/* Kalimantan */}
+    <path d="M 330,120 C 350,90 420,90 440,130 C 450,160 410,210 370,210 C 330,210 320,150 330,120 Z" fill="#86EFAC" stroke="#22C55E" strokeWidth="3" />
+    {/* Sulawesi */}
+    <path d="M 480,130 L 530,120 L 510,160 L 560,170 L 510,190 L 490,220 L 470,170 Z" fill="#86EFAC" stroke="#22C55E" strokeWidth="3" />
+    {/* Papua */}
+    <path d="M 680,170 L 730,140 L 780,170 L 790,220 L 720,230 L 690,195 Z" fill="#86EFAC" stroke="#22C55E" strokeWidth="3" />
+  </svg>
+);
+
+const TreasureChestSvg = ({ isOpen = false }) => {
+  return (
+    <svg viewBox="0 0 120 120" className="w-44 h-44 filter drop-shadow-[0_8px_16px_rgba(0,0,0,0.2)]">
+      <rect x="25" y="55" width="70" height="45" rx="5" fill="#78350F" stroke="#1E293B" strokeWidth="6" />
+      <rect x="33" y="55" width="8" height="45" fill="#FBBF24" stroke="#1E293B" strokeWidth="4" />
+      <rect x="79" y="55" width="8" height="45" fill="#FBBF24" stroke="#1E293B" strokeWidth="4" />
+      
+      {isOpen ? (
+        <g>
+          <motion.circle 
+            cx="60" cy="45" r="30" fill="#FEF08A" opacity="0.6" filter="blur(8px)"
+            animate={{ scale: [1, 1.4, 1], opacity: [0.4, 0.8, 0.4] }}
+            transition={{ repeat: Infinity, duration: 2 }}
+          />
+          <path d="M 25,50 C 25,30 40,20 60,20 C 80,20 95,30 95,50 Z" fill="#92400E" stroke="#1E293B" strokeWidth="6" transform="translate(0, -22) rotate(-15 60 50)" />
+          <circle cx="45" cy="55" r="10" fill="#FBBF24" />
+          <circle cx="60" cy="53" r="12" fill="#FBBF24" />
+          <circle cx="75" cy="55" r="10" fill="#FBBF24" />
+          <polygon points="60,42 63,49 71,49 65,54 67,61 60,57 53,61 55,54 49,49 57,49" fill="#FFF" />
+        </g>
+      ) : (
+        <g>
+          <path d="M 25,55 C 25,35 40,25 60,25 C 80,25 95,35 95,55 Z" fill="#78350F" stroke="#1E293B" strokeWidth="6" />
+          <path d="M 33,26 C 33,26 40,55 40,55" stroke="#1E293B" strokeWidth="5" />
+          <path d="M 87,26 C 87,26 80,55 80,55" stroke="#1E293B" strokeWidth="5" />
+          <rect x="33" y="27" width="8" height="28" fill="#FBBF24" stroke="#1E293B" strokeWidth="4" />
+          <rect x="79" y="27" width="8" height="28" fill="#FBBF24" stroke="#1E293B" strokeWidth="4" />
+          <rect x="52" y="50" width="16" height="16" rx="4" fill="#E2E8F0" stroke="#1E293B" strokeWidth="4" />
+          <circle cx="60" cy="58" r="3" fill="#1E293B" />
+        </g>
+      )}
+    </svg>
+  );
+};
+
+const LockSvg = () => (
+  <svg viewBox="0 0 100 100" className="w-10 h-10 filter drop-shadow-[0_4px_4px_rgba(0,0,0,0.15)]">
+    <rect x="20" y="45" width="60" height="45" rx="10" fill="#CBD5E1" stroke="#1E293B" strokeWidth="8" />
+    <path d="M 32,45 V 30 C 32,18 40,10 50,10 C 60,10 68,18 68,30 V 45" fill="none" stroke="#1E293B" strokeWidth="8" strokeLinecap="round" />
+    <circle cx="50" cy="65" r="8" fill="#1E293B" />
+  </svg>
+);
+
+// ==========================================
+// --- DATA EDUKASI & KONTEN GAME ---
+// ==========================================
+const avatars = [
+  { id: 'hari', name: 'Hari', emoji: '🐯' },
+  { id: 'bada', name: 'Bada', emoji: '🦏' },
+  { id: 'otan', name: 'Otan', emoji: '🦧' },
+  { id: 'cen', name: 'Cen', emoji: '🐦' }
+];
+
+const worlds = [
+  { id: 1, title: "Pulau Pancasila", subtitle: "Dunia Lambang & Sila", desc: "Pelajari lambang negara, simbol setiap sila, serta nilai luhur Pancasila!", misi: "Mencocokkan Simbol Sila Pancasila", bgStyle: "from-amber-100 to-orange-200", badgeId: "badge_pancasila", badgeName: "Sahabat Pancasila", svgComponent: IslandPancasilaSvg },
+  { id: 2, title: "Rumah & Sekolah", subtitle: "Dunia Aturan Bersama", desc: "Bantu Gara memilah tindakan disiplin dan melatih tanggung jawab di lingkungan sehari-hari!", misi: "Menyortir Perilaku Tertib", bgStyle: "from-green-100 to-emerald-200", badgeId: "badge_tertib", badgeName: "Anak Tertib", svgComponent: IslandRumahSvg },
+  { id: 3, title: "Festival Nusantara", subtitle: "Dunia Kebinekaan", desc: "Kenali ragam pakaian adat, ucapan sapaan daerah, dan nilai toleransi kebinekaan!", misi: "Game Memori Kartu Toleransi", bgStyle: "from-sky-100 to-blue-200", badgeId: "badge_bhinneka", badgeName: "Teman Keberagaman", svgComponent: IslandFestivalSvg },
+  { id: 4, title: "Indonesia Hijau", subtitle: "Dunia NKRI & Gotong Royong", desc: "Lakukan aksi nyata memilah sampah di taman sekolah demi mewujudkan gotong royong!", misi: "Game Menangkap & Memilah Sampah", bgStyle: "from-teal-100 to-green-200", badgeId: "badge_nkri", badgeName: "Penjaga Lingkungan", svgComponent: IslandHijauSvg }
+];
+
+const allBadges = [
+  { id: "badge_pancasila", name: "Sahabat Pancasila", desc: "Selesaikan misi di Pulau Pancasila", emoji: "🛡️" },
+  { id: "badge_tertib", name: "Anak Tertib", desc: "Selesaikan misi di Rumah & Sekolah", emoji: "🏠" },
+  { id: "badge_bhinneka", name: "Teman Keberagaman", desc: "Selesaikan misi di Festival Nusantara", emoji: "🤝" },
+  { id: "badge_nkri", name: "Penjaga Lingkungan", desc: "Selesaikan misi di Indonesia Hijau", emoji: "🌱" },
+  { id: "badge_pahlawan", name: "Pahlawan Nusantara", desc: "Selesaikan seluruh dunia & bintang penuh", emoji: "👑" }
+];
+
+const dunia1Cards = [
+  { sila: 1, simbol: "bintang", nama: "Bintang Emas", bunyi: "Ketuhanan Yang Maha Esa", makna: "Kita percaya kepada Tuhan Yang Maha Esa dan saling menghormati antar umat beragama." },
+  { sila: 2, simbol: "rantai", nama: "Rantai Baja", bunyi: "Kemanusiaan yang Adil dan Beradab", makna: "Saling membantu sesama, tidak membeda-bedakan teman, dan bersikap sopan santun." },
+  { sila: 3, simbol: "beringin", nama: "Pohon Beringin", bunyi: "Persatuan Indonesia", makna: "Mencintai tanah air, bangga dengan budaya Nusantara, dan bersatu menjaga kedamaian." },
+  { sila: 4, simbol: "banteng", nama: "Kepala Banteng", bunyi: "Kerakyatan yang Dipimpin oleh Hikmat Kebijaksanaan dalam Permusyawatatan/Perwakilan", makna: "Menyelesaikan masalah bersama lewat musyawarah dan menghargai pendapat teman." },
+  { sila: 5, simbol: "padi", nama: "Padi dan Kapas", bunyi: "Keadilan Sosial bagi Seluruh Rakyat Indonesia", makna: "Berbagi secara adil, gemar berhemat, serta menghargai kerja keras orang lain." }
+];
+
+const game2Questions = [
+  { id: 1, action: "Merapikan tempat tidur segera setelah terbangun di pagi hari.", isTertib: true, emoji: "🛏️", reason: "Ini perilaku tertib! Kamar yang rapi membuat tidur terasa nyaman." },
+  { id: 2, action: "Melempar seragam sekolah kotor sembarangan ke lantai kamar.", isTertib: false, emoji: "👕", reason: "Ini perilaku tidak tertib. Baju kotor wajib ditaruh di keranjang cuci." },
+  { id: 3, action: "Meletakkan sepatu sekolah dengan rapi kembali ke rak sepatu.", isTertib: true, emoji: "👟", reason: "Ini perilaku tertib! Memudahkan saat mau dipakai kembali." },
+  { id: 4, action: "Berebut mainan boneka dengan adik sampai menangis keras.", isTertib: false, emoji: "🧸", reason: "Ini perilaku tidak tertib. Sesama saudara wajib saling menyayangi." },
+  { id: 5, action: "Mengerjakan tugas PR sekolah dengan tekun di meja belajar.", isTertib: true, emoji: "📝", reason: "Ini perilaku tertib! Menjamin masa depan cerdas kebanggaan sekolah." }
+];
+
+const listAturanQuestions = [
+  { id: 1, ruleText: "Merapikan kembali selimut dan bantal saat bangun tidur di pagi hari.", category: "rumah", emoji: "🛌", reason: "Ini aturan di Rumah! Merapikan tempat tidur melatih disiplin diri di pagi hari." },
+  { id: 2, ruleText: "Memakai seragam merah-putih dengan rapi dan datang sebelum bel berbunyi.", category: "sekolah", emoji: "🏫", reason: "Ini aturan di Sekolah! Kita wajib memakai seragam rapi dan datang tepat waktu." },
+  { id: 3, ruleText: "Meminta izin kepada orang tua sebelum pergi bermain keluar bersama teman.", category: "rumah", emoji: "👋", reason: "Ini aturan di Rumah! Selalu berpamitan agar orang tua tidak khawatir." },
+  { id: 4, ruleText: "Mendengarkan bimbingan Ibu/Bapak Guru dengan tenang saat jam pelajaran.", category: "sekolah", emoji: "📝", reason: "Ini aturan di Sekolah! Menghormati guru adalah cara kita belajar ilmu bermanfaat." },
+  { id: 5, ruleText: "Membantu Ibu mencuci piring kotor setelah selesai makan bersama keluarga.", category: "rumah", emoji: "🍽️", reason: "Ini aturan di Rumah! Membantu meringankan pekerjaan orang tua melatih tanggung jawab." },
+  { id: 6, ruleText: "Melaksanakan tugas piket menyapu kelas bersama teman sesuai jadwal.", category: "sekolah", emoji: "🧹", reason: "Ini aturan di Sekolah! Kerja sama regu piket membuat kelas bersih dan nyaman belajar." }
+];
+
+const memoryIcons = [
+  { id: 'ibadah', symbol: '🕌', text: 'Toleransi' }, { id: 'ibadah', symbol: '🕌', text: 'Toleransi' },
+  { id: 'tari', symbol: '🎭', text: 'Tari Adat' }, { id: 'tari', symbol: '🎭', text: 'Tari Adat' },
+  { id: 'jabat', symbol: '🤝', text: 'Persahabatan' }, { id: 'jabat', symbol: '🤝', text: 'Persahabatan' },
+  { id: 'batik', symbol: '👗', text: 'Kebaya' }, { id: 'batik', symbol: '👗', text: 'Kebaya' },
+  { id: 'rendang', symbol: '🍛', text: 'Kuliner' }, { id: 'rendang', symbol: '🍛', text: 'Kuliner' },
+  { id: 'rumah', symbol: '🏠', text: 'Rumah Adat' }, { id: 'rumah', symbol: '🏠', text: 'Rumah Adat' }
+];
+
+const game4TrashItems = [
+  { id: 1, name: "Kulit Pisang 🍌", isOrganik: true, desc: "Kulit pisang adalah sampah organik karena mudah membusuk alami." },
+  { id: 2, name: "Botol Plastik Bekas 🍾", isOrganik: false, desc: "Botol plastik adalah sampah anorganik karena sulit membusuk dan bisa didaur ulang." },
+  { id: 3, name: "Daun Mangga Kering 🍂", isOrganik: true, desc: "Daun kering adalah sampah organik yang berasal dari sisa tanaman alam." },
+  { id: 4, name: "Kaleng Minuman Penyok 🥫", isOrganik: false, desc: "Kaleng adalah sampah anorganik yang terbuat dari bahan logam buatan." },
+  { id: 5, name: "Sisa Apel Merah 🍎", isOrganik: true, desc: "Sisa makanan adalah sampah organik yang berguna dijadikan pupuk kompos." }
+];
+
+const listPilihSikapQuestions = [
+  { id: 1, scenario: "Teman sebangkumu tidak sengaja menjatuhkan kotak pensilnya hingga berantakan.", emoji: "✏️", optionA: { text: "Pura-pura tidak melihat.", isCorrect: false, reaction: "Aduh, itu kurang peduli. Kita harus saling menolong!" }, optionB: { text: "Segera membantu merapikan.", isCorrect: true, reaction: "Hebat! Menolong teman adalah sikap terpuji." } },
+  { id: 2, scenario: "Kamu melihat Ibu sedang sibuk menyapu lantai rumah sendirian.", emoji: "🧹", optionA: { text: "Membantu Ibu menyapu.", isCorrect: true, reaction: "Keren! Membantu orang tua adalah contoh disiplin." }, optionB: { text: "Bermain game saja.", isCorrect: false, reaction: "Lebih baik kita bantu meringankan beban Ibu." } },
+  { id: 3, scenario: "Ada teman baru di kelas yang kelihatan pemalu dan berdiri sendirian.", emoji: "🤝", optionA: { text: "Membiarkannya sendirian.", isCorrect: false, reaction: "Jangan dibiarkan, dia butuh teman bermain." }, optionB: { text: "Mengajaknya bermain bersama.", isCorrect: true, reaction: "Sempurna! Berteman tanpa membedakan itu indah." } },
+  { id: 4, scenario: "Kamu tidak sengaja merusak mainan adik.", emoji: "🤖", optionA: { text: "Meminta maaf dan jujur.", isCorrect: true, reaction: "Luar biasa! Berkata jujur adalah sikap kesatria." }, optionB: { text: "Sembunyi dan berbohong.", isCorrect: false, reaction: "Berbohong itu tidak baik. Jujur membuat hati tenang!" } },
+  { id: 5, scenario: "Ada bungkusan plastik berserakan di depan kelas.", emoji: "🗑️", optionA: { text: "Melewatinya saja.", isCorrect: false, reaction: "Menjaga kebersihan adalah tanggung jawab bersama." }, optionB: { text: "Membuangnya ke tempat sampah.", isCorrect: true, reaction: "Top! Menjaga bumi adalah wujud cinta lingkungan." } }
+];
+
+const listKerjasamaQuestions = [
+  { id: 1, scenario: "Warga desa sedang membersihkan selokan yang tersumbat.", emoji: "🧹", optionA: { text: "Ikut membantu membuang sampah.", isCorrect: true, reaction: "Hebat! Gotong royong mencegah banjir." }, optionB: { text: "Menonton saja.", isCorrect: false, reaction: "Aduh, lebih baik kita ikut membantu semampu kita!" } },
+  { id: 2, scenario: "Teman sekelasmu kesulitan membawa banyak buku.", emoji: "📚", optionA: { text: "Pura-pura tidak melihat.", isCorrect: false, reaction: "Jangan begitu, teman harus kita bantu." }, optionB: { text: "Menawarkan bantuan membawakan.", isCorrect: true, reaction: "Luar biasa! Sikap saling membantu adalah ciri anak hebat." } },
+  { id: 3, scenario: "Sekolah mengadakan acara tanam pohon bersama.", emoji: "🌱", optionA: { text: "Bergabung menanam pohon.", isCorrect: true, reaction: "Mantap! Bekerja sama membuat sekolah sejuk." }, optionB: { text: "Menghindar karena takut kotor.", isCorrect: false, reaction: "Tangan kotor bisa dicuci, tapi menanam pohon sangat penting!" } },
+  { id: 4, scenario: "Ibu sedang sibuk menyiapkan hidangan untuk tamu.", emoji: "🍳", optionA: { text: "Membantu menata piring di meja.", isCorrect: true, reaction: "Pintar sekali! Bekerja sama meringankan pekerjaan Ibu." }, optionB: { text: "Bermain game di kamar.", isCorrect: false, reaction: "Lebih baik bantu Ibu dulu ya." } },
+  { id: 5, scenario: "Jadwal piket kelas, tapi salah satu temanmu sedang sakit.", emoji: "🏫", optionA: { text: "Membiarkan tugasnya tidak dikerjakan.", isCorrect: false, reaction: "Nanti kelas masih kotor, mari kerjakan bersama." }, optionB: { text: "Membagi tugas teman yang sakit.", isCorrect: true, reaction: "Sangat mulia! Itulah makna sejati dari gotong royong." } }
+];
+
+const materiRumah = [
+  { id: "r1", emoji: "🛏️", title: "Rapikan Tempat Tidur", desc: "Setiap bangun pagi, jangan lupa lipat selimut dan rapikan bantalmu sendiri. Kasur yang rapi bikin tidur makin nyenyak, lho!" },
+  { id: "r2", emoji: "🧹", title: "Membantu Ayah & Ibu", desc: "Ibu dan Ayah pasti lelah setelah bekerja. Kita bisa membantu mereka dengan hal kecil, seperti menyapu lantai atau mencuci piring." },
+  { id: "r3", emoji: "🧸", title: "Rukun Bersaudara", desc: "Jika punya kakak atau adik, bermainlah dengan rukun. Jangan berebut dan selalu rapikan mainan kembali ke dalam kotak." },
+  { id: "r4", emoji: "👟", title: "Taruh Pada Tempatnya", desc: "Pulang bermain atau sekolah? Langsung taruh sepatu di rak dan letakkan baju kotor di keranjang cuci ya!" },
+  { id: "r5", emoji: "👋", title: "Berpamitan & Salam", desc: "Selalu cium tangan dan ucapkan salam saat mau pergi keluar rumah atau saat baru pulang." }
+];
+
+const materiSekolah = [
+  { id: "s1", emoji: "⏰", title: "Datang Tepat Waktu", desc: "Bangun lebih pagi, pakai seragam merah-putihmu dengan rapi, dan datang ke sekolah sebelum bel berbunyi." },
+  { id: "s2", emoji: "👨‍🏫", title: "Menghormati Guru", desc: "Dengarkan penjelasan Bapak dan Ibu Guru dengan tenang. Jika ingin bertanya, angkat tanganmu terlebih dahulu dengan sopan." },
+  { id: "s3", emoji: "🤝", title: "Bermain Rukun", desc: "Berteman dengan siapa saja tanpa membeda-bedakan suku dan agama. Kalau ada teman yang jatuh, segera ditolong, ya!" },
+  { id: "s4", emoji: "🗑️", title: "Piket & Jaga Kebersihan", desc: "Laksanakan tugas regu piket dengan semangat! Buanglah bungkus jajan ke tempat sampah agar sekolah bersih." },
+  { id: "s5", emoji: "🤫", title: "Tertib Perpustakaan", desc: "Saat membaca buku di perpustakaan atau melihat teman beribadah, kita tidak boleh berisik agar tidak mengganggu." }
+];
+
+const materiFestival = [
+  { id: "f1", emoji: "🏰", title: "Jawa & Sunda", desc: "Dari Pulau Jawa, kita mengenal Suku Jawa dan Sunda. Mereka melestarikan alat musik indah seperti Gamelan dan Angklung, serta baju adat Kebaya yang anggun!" },
+  { id: "f2", emoji: "🍛", title: "Minangkabau", desc: "Di Sumatra Barat ada Suku Minang yang terkenal dengan arsitektur Rumah Gadang dan makanan terlezat di dunia, yaitu Rendang! Pernahkah kamu mencobanya?" },
+  { id: "f3", emoji: "🌺", title: "Suku Bali", desc: "Pulau Dewata Bali kaya akan tradisi seperti Tari Kecak dan upacara adat. Sikap toleransi di Bali sangat kuat dan harmonis, lho!" },
+  { id: "f4", emoji: "🪶", title: "Suku Dayak", desc: "Bergeser ke Kalimantan, ada Suku Dayak yang ramah dan tinggal di Rumah Panjang (Betang). Mereka sangat menjaga kelestarian alam dan hutan hujan." },
+  { id: "f5", emoji: "🛖", title: "Asmat & Dani", desc: "Di ujung timur Nusantara, saudara kita dari Suku Asmat dan Dani di Papua punya Rumah Honai dan seni ukiran kayu yang mendunia!" }
+];
+
+const materiLingkungan = [
+  { id: "lh1", emoji: "🧹", title: "Menyapu Rumah", desc: "Bantu ayah dan ibu menyapu dan mengepel lantai setiap hari agar rumah kita bebas dari debu dan kuman penyakit." },
+  { id: "lh2", emoji: "🍂", title: "Bersihkan Selokan", desc: "Bergotong royong membersihkan selokan dan halaman rumah agar aliran air lancar dan tidak banjir saat hujan." },
+  { id: "ls1", emoji: "🪣", title: "Piket Kelas", desc: "Laksanakan tugas regu piket dengan gembira! Kelas yang bersih dan wangi membuat kita lebih fokus belajar." },
+  { id: "ls2", emoji: "🗑️", title: "Buang Sampah", desc: "Selalu buang bungkus jajan ke tempat sampah yang benar. Jangan pernah tinggalkan sampah di dalam laci mejamu ya!" },
+  { id: "ks1", emoji: "🤝", title: "Kerja Bakti", desc: "Bekerja bersama-sama membersihkan lingkungan desa atau sekolah. Pekerjaan berat akan terasa ringan jika dikerjakan bersama!" },
+  { id: "ks2", emoji: "🌱", title: "Menanam Pohon", desc: "Ayo ajak teman-teman menanam dan menyirami tanaman di sekitar kita agar udara bumi kita tetap sejuk dan segar." }
+];
+
+export default function App() {
+  const [screen, setScreen] = useState('landing'); 
+  const [playerName, setPlayerName] = useState('');
+  const [selectedAvatar, setSelectedAvatar] = useState('hari');
+  const [inputError, setInputError] = useState('');
+  
+  const [xp, setXp] = useState(0);
+  const [level, setLevel] = useState(1);
+  const [unlockedWorlds, setUnlockedWorlds] = useState([1]);
+  const [completedWorlds, setCompletedWorlds] = useState([]);
+  const [stars, setStars] = useState({ 1: 0, 2: 0, 3: 0, 4: 0 });
+  const [badges, setBadges] = useState([]);
+  const [activeWorldDetail, setActiveWorldDetail] = useState(null);
+
+  const [activeCardIndex, setActiveCardIndex] = useState(0);
+  const [viewedCards, setViewedCards] = useState([]);
+
+  const [activeEnvTab, setActiveEnvTab] = useState('rumah'); 
+  const [selectedHomeObject, setSelectedHomeObject] = useState(null);
+  const [exploredObjects, setExploredObjects] = useState([]); 
+
+  const [selectedFestivalObject, setSelectedFestivalObject] = useState(null);
+  const [exploredFestivalObjects, setExploredFestivalObjects] = useState([]);
+
+  const [selectedLingkunganObject, setSelectedLingkunganObject] = useState(null);
+  const [exploredLingkunganObjects, setExploredLingkunganObjects] = useState([]);
+
+  const [draggableSymbols, setDraggableSymbols] = useState([]);
+  const [targetSlots, setTargetSlots] = useState([]);
+  const [selectedSymbol, setSelectedSymbol] = useState(null); 
+  const [matchedPairs, setMatchedPairs] = useState([]); 
+  const [wrongAttempts, setWrongAttempts] = useState(0);
+  const [showVictoryModal, setShowVictoryModal] = useState(false);
+
+  const [game2StoryIndex, setGame2StoryIndex] = useState(0);
+  const [game2WrongAttempts, setGame2WrongAttempts] = useState(0);
+  const [game2CardAnimState, setGame2CardAnimState] = useState('center'); 
+
+  const [memoryCards, setMemoryCards] = useState([]);
+  const [selectedCards, setSelectedCards] = useState([]); 
+  const [memoryMatchedPairs, setMemoryMatchedPairs] = useState([]); 
+  const [memoryWrongAttempts, setMemoryWrongAttempts] = useState(0);
+
+  const [game4TrashIndex, setGame4TrashIndex] = useState(0);
+  const [game4WrongAttempts, setGame4WrongAttempts] = useState(0);
+
+  const [kerjasamaIndex, setKerjasamaIndex] = useState(0);
+  const [kerjasamaWrongAttempts, setKerjasamaWrongAttempts] = useState(0);
+  const [kerjasamaQuestions, setKerjasamaQuestions] = useState([]);
+
+  const [pilihSikapIndex, setPilihSikapIndex] = useState(0);
+  const [pilihSikapWrongAttempts, setPilihSikapWrongAttempts] = useState(0);
+  const [pilihSikapQuestions, setPilihSikapQuestions] = useState([]);
+
+  const [aturanItems, setAturanItems] = useState([]);
+  const [currentAturanIndex, setCurrentAturanIndex] = useState(0);
+  const [aturanWrongAttempts, setAturanWrongAttempts] = useState(0);
+  const [showAturanVictoryModal, setShowAturanVictoryModal] = useState(false);
+  const [aturanFeedback, setAturanFeedback] = useState('');
+
+  const [rewardWorld2Stars, setRewardWorld2Stars] = useState(3);
+  const [rewardWorld2ChestOpen, setRewardWorld2ChestOpen] = useState(false);
+  const [rewardWorld2CounterXp, setRewardWorld2CounterXp] = useState(0);
+
+  const [rewardWorld3Stars, setRewardWorld3Stars] = useState(3);
+  const [rewardWorld3ChestOpen, setRewardWorld3ChestOpen] = useState(false);
+  const [rewardWorld3CounterXp, setRewardWorld3CounterXp] = useState(0);
+
+  const [rewardWorld4Stars, setRewardWorld4Stars] = useState(3);
+  const [rewardWorld4ChestOpen, setRewardWorld4ChestOpen] = useState(false);
+  const [rewardWorld4CounterXp, setRewardWorld4CounterXp] = useState(0);
+
+  const [rewardKerjasamaStars, setRewardKerjasamaStars] = useState(3);
+  const [rewardKerjasamaChestOpen, setRewardKerjasamaChestOpen] = useState(false);
+  const [rewardKerjasamaCounterXp, setRewardKerjasamaCounterXp] = useState(0);
+
+  const saveProgressToLocalStorage = (name, avatar, currentXp, currentLvl, unlocked, completed, currentStars, currentBadges) => {
+    localStorage.setItem('pancasila_playerName', name);
+    localStorage.setItem('pancasila_selectedAvatar', avatar);
+    localStorage.setItem('pancasila_xp', currentXp.toString());
+    localStorage.setItem('pancasila_level', currentLvl.toString());
+    localStorage.setItem('pancasila_unlockedWorlds', JSON.stringify(unlocked));
+    localStorage.setItem('pancasila_completedWorlds', JSON.stringify(completed));
+    localStorage.setItem('pancasila_stars', JSON.stringify(currentStars));
+    localStorage.setItem('pancasila_badges', JSON.stringify(currentBadges));
+  };
+
+  const getPlayerAvatarEmoji = () => {
+    const av = avatars.find(a => a.id === selectedAvatar);
+    return av ? av.emoji : '🐯';
+  };
+
+  const handleStartOnboarding = () => {
+    playSoundEffect('click');
+    setScreen('onboarding');
+  };
+
+  const handleOnboardingSubmit = (e) => {
+    e.preventDefault();
+    if (!playerName.trim()) {
+      playSoundEffect('error');
+      setInputError('Tulis nama panggilanmu dulu ya, Pahlawan!');
+      return;
+    }
+    if (playerName.length > 10) {
+      playSoundEffect('error');
+      setInputError('Nama terlalu panjang, maksimal 10 huruf ya!');
+      return;
+    }
+    setInputError('');
+    playSoundEffect('success');
+    setScreen('intro');
+  };
+
+  const handleStartAdventure = () => {
+    playSoundEffect('fanfare');
+    saveProgressToLocalStorage(playerName, selectedAvatar, xp, level, unlockedWorlds, completedWorlds, stars, badges);
+    setScreen('dashboard');
+  };
+
+  const handleOpenWorld = (world) => {
+    playSoundEffect('click');
+    setActiveWorldDetail(world);
+  };
+
+  const handleGoToLearning = () => {
+    playSoundEffect('click');
+    if (activeWorldDetail.id === 1) {
+      setViewedCards([0]);
+      setActiveCardIndex(0);
+      setActiveWorldDetail(null);
+      setScreen('learning');
+    } else if (activeWorldDetail.id === 2) {
+      setExploredObjects([]);
+      setSelectedHomeObject(null);
+      setActiveEnvTab('rumah'); 
+      setActiveWorldDetail(null);
+      setScreen('learningWorld2');
+    } else if (activeWorldDetail.id === 3) {
+      setExploredFestivalObjects([]);
+      setSelectedFestivalObject(null);
+      setActiveWorldDetail(null);
+      setScreen('learningWorld3');
+    } else if (activeWorldDetail.id === 4) {
+      setExploredLingkunganObjects([]);
+      setSelectedLingkunganObject(null);
+      setActiveWorldDetail(null);
+      setScreen('learningWorld4');
+    } else {
+      alert("Ruang belajar interaktif untuk dunia ini sedang disiapkan oleh Gara!");
+      setActiveWorldDetail(null);
+    }
+  };
+
+  const handleNextCard = () => {
+    playSoundEffect('click');
+    const nextIdx = activeCardIndex + 1;
+    setActiveCardIndex(nextIdx);
+    if (!viewedCards.includes(nextIdx)) {
+      setViewedCards([...viewedCards, nextIdx]);
+      const newXp = xp + 5;
+      setXp(newXp);
+      saveProgressToLocalStorage(playerName, selectedAvatar, newXp, level, unlockedWorlds, completedWorlds, stars, badges);
+    }
+  };
+
+  const handleGoToGame = () => {
+    playSoundEffect('click');
+    initGame1();
+    setScreen('game1');
+  };
+
+  const handleSelectSymbol = (item) => {
+    playSoundEffect('click');
+    setSelectedSymbol(item.id === selectedSymbol ? null : item.id);
+  };
+
+  const handleSelectSlot = (slotSilaId) => {
+    if (!selectedSymbol) return;
+
+    if (selectedSymbol === slotSilaId) {
+      playSoundEffect('success');
+      const updatedPairs = [...matchedPairs, slotSilaId];
+      setMatchedPairs(updatedPairs);
+      
+      setDraggableSymbols(prev => prev.filter(item => item.id !== slotSilaId));
+      
+      const newXp = xp + 10;
+      setXp(newXp);
+      saveProgressToLocalStorage(playerName, selectedAvatar, newXp, level, unlockedWorlds, completedWorlds, stars, badges);
+
+      if (updatedPairs.length === 5) {
+        handleWinWorld1();
+      }
+    } else {
+      playSoundEffect('error');
+      setWrongAttempts(prev => prev + 1);
+    }
+    setSelectedSymbol(null);
+  };
+
+  const handlePlayWorldGame = (worldId) => {
+    playSoundEffect('click');
+    setActiveWorldDetail(null);
+    if (worldId === 1) {
+      initGame1();
+      setScreen('game1');
+    } else if (worldId === 2) {
+      setGame2StoryIndex(0);
+      setGame2WrongAttempts(0);
+      setGame2CardAnimState('center');
+      setScreen('game2');
+    } else if (worldId === 3) {
+      initMemoryGame();
+    } else if (worldId === 4) {
+      setGame4TrashIndex(0);
+      setGame4WrongAttempts(0);
+      setScreen('game4');
+    }
+  };
+
+  const initPilihSikapGame = () => {
+    playSoundEffect('click');
+    setActiveWorldDetail(null);
+    const shuffled = [...listPilihSikapQuestions].sort(() => Math.random() - 0.5);
+    setPilihSikapQuestions(shuffled);
+    setPilihSikapIndex(0);
+    setPilihSikapWrongAttempts(0);
+    setScreen('gamePilihSikap');
+  };
+
+  const initKerjasamaGame = () => {
+    playSoundEffect('click');
+    setActiveWorldDetail(null);
+    const shuffled = [...listKerjasamaQuestions].sort(() => Math.random() - 0.5);
+    setKerjasamaQuestions(shuffled);
+    setKerjasamaIndex(0);
+    setKerjasamaWrongAttempts(0);
+    setScreen('gameKerjasama');
+  };
+
+  const initKelompokAturanGame = () => {
+    playSoundEffect('click');
+    setActiveWorldDetail(null);
+    const shuffled = [...listAturanQuestions].sort(() => Math.random() - 0.5);
+    setAturanItems(shuffled);
+    setCurrentAturanIndex(0);
+    setAturanWrongAttempts(0);
+    setAturanFeedback('');
+    setShowAturanVictoryModal(false);
+    setScreen('gameKelompokAturan');
+  };
+
+  const handleAnswerAturanKelompok = (categorySelected) => {
+    const currentItem = aturanItems[currentAturanIndex];
+    if (categorySelected === currentItem.category) {
+      playSoundEffect('success');
+      setAturanFeedback(`🎉 HEBAT! ${currentItem.reason}`);
+      
+      const newXp = xp + 15; 
+      setXp(newXp);
+      saveProgressToLocalStorage(playerName, selectedAvatar, newXp, level, unlockedWorlds, completedWorlds, stars, badges);
+
+      setTimeout(() => {
+        setAturanFeedback('');
+        if (currentAturanIndex + 1 === aturanItems.length) {
+          playSoundEffect('fanfare');
+          setShowAturanVictoryModal(true);
+        } else {
+          setCurrentAturanIndex(prev => prev + 1);
+        }
+      }, 2500);
+    } else {
+      playSoundEffect('error');
+      setAturanWrongAttempts(prev => prev + 1);
+      setAturanFeedback(`❌ KURANG TEPAT! Ayo ingat kembali, ${currentItem.ruleText} ditaruh di mana ya?`);
+    }
+  };
+
+  const handleCompleteWorld2Progress = (totalWrongs) => {
+    let starsEarned = 3;
+    if (totalWrongs >= 2) starsEarned = 2;
+    if (totalWrongs >= 4) starsEarned = 1;
+
+    setRewardWorld2Stars(starsEarned);
+    setRewardWorld2ChestOpen(false);
+    setRewardWorld2CounterXp(0);
+    setScreen('rewardWorld2');
+  };
+
+  const handleOpenRewardChest = () => {
+    playSoundEffect('fanfare');
+    setRewardWorld2ChestOpen(true);
+    
+    let currentCount = 0;
+    const interval = setInterval(() => {
+      currentCount += 2;
+      if (currentCount >= 50) {
+        setRewardWorld2CounterXp(50);
+        clearInterval(interval);
+      } else {
+        setRewardWorld2CounterXp(currentCount);
+      }
+    }, 30);
+  };
+
+  const handleClaimWorld2FinalRewards = () => {
+    playSoundEffect('click');
+    const finalXpBonus = xp + 50;
+    let newLvl = level;
+    if (finalXpBonus >= level * 50 && level < 5) newLvl = level + 1;
+
+    const newCompleted = completedWorlds.includes(2) ? completedWorlds : [...completedWorlds, 2];
+    const newUnlocked = unlockedWorlds.includes(3) ? unlockedWorlds : [...unlockedWorlds, 3];
+    const newStars = { ...stars, 2: rewardWorld2Stars };
+    const newBadges = [...badges];
+    if (!newBadges.includes("badge_tertib")) newBadges.push("badge_tertib");
+
+    setXp(finalXpBonus);
+    setLevel(newLvl);
+    setCompletedWorlds(newCompleted);
+    setUnlockedWorlds(newUnlocked);
+    setStars(newStars);
+    setBadges(newBadges);
+
+    saveProgressToLocalStorage(playerName, selectedAvatar, finalXpBonus, newLvl, newUnlocked, newCompleted, newStars, newBadges);
+    setScreen('dashboard');
+  };
+
+  const handleCompleteWorld3Progress = (totalWrongs) => {
+    let starsEarned = 3;
+    if (totalWrongs >= 3) starsEarned = 2;
+    if (totalWrongs >= 6) starsEarned = 1;
+
+    setRewardWorld3Stars(starsEarned);
+    setRewardWorld3ChestOpen(false);
+    setRewardWorld3CounterXp(0);
+    setScreen('rewardWorld3');
+  };
+
+  const handleOpenRewardChest3 = () => {
+    playSoundEffect('fanfare');
+    setRewardWorld3ChestOpen(true);
+    let currentCount = 0;
+    const interval = setInterval(() => {
+      currentCount += 2;
+      if (currentCount >= 50) {
+        setRewardWorld3CounterXp(50);
+        clearInterval(interval);
+      } else {
+        setRewardWorld3CounterXp(currentCount);
+      }
+    }, 30);
+  };
+
+  const handleClaimWorld3FinalRewards = () => {
+    playSoundEffect('click');
+    const finalXpBonus = xp + 50;
+    let newLvl = level;
+    if (finalXpBonus >= level * 50 && level < 5) newLvl = level + 1;
+
+    const newCompleted = completedWorlds.includes(3) ? completedWorlds : [...completedWorlds, 3];
+    const newUnlocked = unlockedWorlds.includes(4) ? unlockedWorlds : [...unlockedWorlds, 4];
+    const newStars = { ...stars, 3: rewardWorld3Stars };
+    const newBadges = [...badges];
+    if (!newBadges.includes("badge_bhinneka")) newBadges.push("badge_bhinneka");
+
+    setXp(finalXpBonus);
+    setLevel(newLvl);
+    setCompletedWorlds(newCompleted);
+    setUnlockedWorlds(newUnlocked);
+    setStars(newStars);
+    setBadges(newBadges);
+
+    saveProgressToLocalStorage(playerName, selectedAvatar, finalXpBonus, newLvl, newUnlocked, newCompleted, newStars, newBadges);
+    setScreen('dashboard');
+  };
+
+  const handleCompleteWorld4Progress = (totalWrongs) => {
+    let starsEarned = 3;
+    if (totalWrongs >= 2) starsEarned = 2;
+    if (totalWrongs >= 4) starsEarned = 1;
+
+    setRewardWorld4Stars(starsEarned);
+    setRewardWorld4ChestOpen(false);
+    setRewardWorld4CounterXp(0);
+    setScreen('rewardWorld4');
+  };
+
+  const handleOpenRewardChest4 = () => {
+    playSoundEffect('fanfare');
+    setRewardWorld4ChestOpen(true);
+    let currentCount = 0;
+    const interval = setInterval(() => {
+      currentCount += 2;
+      if (currentCount >= 50) {
+        setRewardWorld4CounterXp(50);
+        clearInterval(interval);
+      } else {
+        setRewardWorld4CounterXp(currentCount);
+      }
+    }, 30);
+  };
+
+  const handleClaimWorld4FinalRewards = () => {
+    playSoundEffect('click');
+    const finalXpBonus = xp + 50;
+    let newLvl = level;
+    if (finalXpBonus >= level * 50 && level < 5) newLvl = level + 1;
+
+    const newCompleted = completedWorlds.includes(4) ? completedWorlds : [...completedWorlds, 4];
+    const newUnlocked = unlockedWorlds; 
+    const newStars = { ...stars, 4: rewardWorld4Stars };
+    const newBadges = [...badges];
+    if (!newBadges.includes("badge_nkri")) newBadges.push("badge_nkri");
+    
+    let isFirstTimeHero = false;
+    if (newCompleted.length === 4 && !newBadges.includes("badge_pahlawan")) {
+      newBadges.push("badge_pahlawan");
+      isFirstTimeHero = true;
+    }
+
+    setXp(finalXpBonus);
+    setLevel(newLvl);
+    setCompletedWorlds(newCompleted);
+    setUnlockedWorlds(newUnlocked);
+    setStars(newStars);
+    setBadges(newBadges);
+
+    saveProgressToLocalStorage(playerName, selectedAvatar, finalXpBonus, newLvl, newUnlocked, newCompleted, newStars, newBadges);
+    
+    if (isFirstTimeHero) {
+      playSoundEffect('fanfare');
+      setScreen('grandFinale');
+    } else {
+      setScreen('dashboard');
+    }
+  };
+
+  const handleCompleteKerjasamaProgress = () => {
+    let starsEarned = 3;
+    if (kerjasamaWrongAttempts >= 3) starsEarned = 2;
+    if (kerjasamaWrongAttempts >= 5) starsEarned = 1;
+
+    setRewardKerjasamaStars(starsEarned);
+    setRewardKerjasamaChestOpen(false);
+    setRewardKerjasamaCounterXp(0);
+    setScreen('rewardKerjasama');
+  };
+
+  const handleOpenRewardChestKerjasama = () => {
+    playSoundEffect('fanfare');
+    setRewardKerjasamaChestOpen(true);
+    let currentCount = 0;
+    const interval = setInterval(() => {
+      currentCount += 2;
+      if (currentCount >= 50) {
+        setRewardKerjasamaCounterXp(50);
+        clearInterval(interval);
+      } else {
+        setRewardKerjasamaCounterXp(currentCount);
+      }
+    }, 30);
+  };
+
+  const handleClaimKerjasamaFinalRewards = () => {
+    playSoundEffect('click');
+    const finalXpBonus = xp + 50;
+    let newLvl = level;
+    if (finalXpBonus >= level * 50 && level < 5) newLvl = level + 1;
+
+    const newCompleted = completedWorlds.includes(4) ? completedWorlds : [...completedWorlds, 4];
+    const newUnlocked = unlockedWorlds; 
+    const newStars = { ...stars, 4: Math.max(stars[4] || 0, rewardKerjasamaStars) }; 
+    const newBadges = [...badges];
+    if (!newBadges.includes("badge_nkri")) newBadges.push("badge_nkri");
+    
+    let isFirstTimeHero = false;
+    if (newCompleted.length === 4 && !newBadges.includes("badge_pahlawan")) {
+      newBadges.push("badge_pahlawan");
+      isFirstTimeHero = true;
+    }
+
+    setXp(finalXpBonus);
+    setLevel(newLvl);
+    setCompletedWorlds(newCompleted);
+    setUnlockedWorlds(newUnlocked);
+    setStars(newStars);
+    setBadges(newBadges);
+
+    saveProgressToLocalStorage(playerName, selectedAvatar, finalXpBonus, newLvl, newUnlocked, newCompleted, newStars, newBadges);
+    
+    if (isFirstTimeHero) {
+      playSoundEffect('fanfare');
+      setScreen('grandFinale');
+    } else {
+      setScreen('dashboard');
+    }
+  };
+
+  const initGame1 = () => {
+    const shuffled = [...dunia1Cards]
+      .map(item => ({ id: item.sila, simbol: item.simbol, nama: item.nama }))
+      .sort(() => Math.random() - 0.5);
+    setDraggableSymbols(shuffled);
+    setTargetSlots(dunia1Cards);
+    setMatchedPairs([]);
+    setWrongAttempts(0);
+    setSelectedSymbol(null);
+    setShowVictoryModal(false);
+  };
+
+  const handleExploreObject = (obj) => {
+    playSoundEffect('click');
+    setSelectedHomeObject(obj);
+    if (!exploredObjects.includes(obj.id)) {
+      const updatedExplored = [...exploredObjects, obj.id];
+      setExploredObjects(updatedExplored);
+      
+      const newXp = xp + 5;
+      setXp(newXp);
+      saveProgressToLocalStorage(playerName, selectedAvatar, newXp, level, unlockedWorlds, completedWorlds, stars, badges);
+    }
+  };
+
+  const handleExploreFestival = (obj) => {
+    playSoundEffect('click');
+    setSelectedFestivalObject(obj);
+    if (!exploredFestivalObjects.includes(obj.id)) {
+      const updatedExplored = [...exploredFestivalObjects, obj.id];
+      setExploredFestivalObjects(updatedExplored);
+      
+      const newXp = xp + 5;
+      setXp(newXp);
+      saveProgressToLocalStorage(playerName, selectedAvatar, newXp, level, unlockedWorlds, completedWorlds, stars, badges);
+    }
+  };
+
+  const handleExploreLingkungan = (obj) => {
+    playSoundEffect('click');
+    setSelectedLingkunganObject(obj);
+    if (!exploredLingkunganObjects.includes(obj.id)) {
+      const updatedExplored = [...exploredLingkunganObjects, obj.id];
+      setExploredLingkunganObjects(updatedExplored);
+      
+      const newXp = xp + 5;
+      setXp(newXp);
+      saveProgressToLocalStorage(playerName, selectedAvatar, newXp, level, unlockedWorlds, completedWorlds, stars, badges);
+    }
+  };
+
+  const handleAnswerGame2 = (chosenValue) => {
+    const current = game2Questions[game2StoryIndex];
+    if (chosenValue === current.isTertib) {
+      playSoundEffect('success');
+      setGame2CardAnimState(chosenValue ? 'left' : 'right');
+
+      setTimeout(() => {
+        const newXp = xp + 10;
+        setXp(newXp);
+        saveProgressToLocalStorage(playerName, selectedAvatar, newXp, level, unlockedWorlds, completedWorlds, stars, badges);
+
+        if (game2StoryIndex + 1 === game2Questions.length) {
+          handleCompleteWorld2Progress(game2WrongAttempts);
+        } else {
+          setGame2StoryIndex(prev => prev + 1);
+          setGame2CardAnimState('center');
+        }
+      }, 500);
+    } else {
+      playSoundEffect('error');
+      setGame2WrongAttempts(prev => prev + 1);
+      alert(`⚠️ ${current.reason}`);
+    }
+  };
+
+  const initMemoryGame = () => {
+    const mapped = memoryIcons
+      .map((item, index) => ({
+        uniqueId: index,
+        id: item.id,
+        symbol: item.symbol,
+        text: item.text,
+        isFlipped: false,
+        isMatched: false
+      }))
+      .sort(() => Math.random() - 0.5);
+
+    setMemoryCards(mapped);
+    setSelectedCards([]);
+    setMemoryMatchedPairs([]);
+    setMemoryWrongAttempts(0);
+    setScreen('gameMemory');
+  };
+
+  const handleCardClick = (cardIdx) => {
+    if (
+      memoryCards[cardIdx].isFlipped || 
+      memoryCards[cardIdx].isMatched || 
+      selectedCards.length === 2
+    ) {
+      return;
+    }
+
+    playSoundEffect('click');
+    const updatedCards = [...memoryCards];
+    updatedCards[cardIdx].isFlipped = true;
+    setMemoryCards(updatedCards);
+
+    const updatedSelection = [...selectedCards, cardIdx];
+    setSelectedCards(updatedSelection);
+
+    if (updatedSelection.length === 2) {
+      const firstCard = memoryCards[updatedSelection[0]];
+      const secondCard = memoryCards[updatedSelection[1]];
+
+      if (firstCard.id === secondCard.id) {
+        playSoundEffect('success');
+        setTimeout(() => {
+          const matchedList = [...memoryCards];
+          matchedList[updatedSelection[0]].isMatched = true;
+          matchedList[updatedSelection[1]].isMatched = true;
+          setMemoryCards(matchedList);
+          
+          const newPairs = [...memoryMatchedPairs, firstCard.id];
+          setMemoryMatchedPairs(newPairs);
+          setSelectedCards([]);
+
+          const newXp = xp + 10;
+          setXp(newXp);
+          saveProgressToLocalStorage(playerName, selectedAvatar, newXp, level, unlockedWorlds, completedWorlds, stars, badges);
+
+          if (newPairs.length === 6) {
+            playSoundEffect('fanfare');
+            setTimeout(() => {
+               handleCompleteWorld3Progress(memoryWrongAttempts);
+            }, 800);
+          }
+        }, 600);
+      } else {
+        playSoundEffect('error');
+        setMemoryWrongAttempts(prev => prev + 1);
+        setTimeout(() => {
+          const resetList = [...memoryCards];
+          resetList[updatedSelection[0]].isFlipped = false;
+          resetList[updatedSelection[1]].isFlipped = false;
+          setMemoryCards(resetList);
+          setSelectedCards([]);
+        }, 1200);
+      }
+    }
+  };
+
+  const handleAnswerGame4 = (isOrganicChosen) => {
+    const current = game4TrashItems[game4TrashIndex];
+    if (isOrganicChosen === current.isOrganik) {
+      playSoundEffect('success');
+      
+      const newXp = xp + 10;
+      setXp(newXp);
+      saveProgressToLocalStorage(playerName, selectedAvatar, newXp, level, unlockedWorlds, completedWorlds, stars, badges);
+
+      if (game4TrashIndex + 1 === game4TrashItems.length) {
+        playSoundEffect('fanfare');
+        setTimeout(() => {
+           handleCompleteWorld4Progress(game4WrongAttempts);
+        }, 800);
+      } else {
+        setGame4TrashIndex(prev => prev + 1);
+      }
+    } else {
+      playSoundEffect('error');
+      setGame4WrongAttempts(prev => prev + 1);
+      alert(`⚠️ ${current.desc}`);
+    }
+  };
+
+  const handleCompleteWorld1Rewards = () => {
+    playSoundEffect('click');
+    let starsEarned = 3;
+    if (wrongAttempts >= 3) starsEarned = 2;
+    if (wrongAttempts >= 6) starsEarned = 1;
+    const newXp = xp + 50;
+    let newLvl = level;
+    if (newXp >= level * 50 && level < 5) newLvl = level + 1;
+    const newCompleted = completedWorlds.includes(1) ? completedWorlds : [...completedWorlds, 1];
+    const newUnlocked = unlockedWorlds.includes(2) ? unlockedWorlds : [...unlockedWorlds, 2];
+    const newStars = { ...stars, 1: starsEarned };
+    const newBadges = [...badges];
+    if (!newBadges.includes("badge_pancasila")) newBadges.push("badge_pancasila");
+    setXp(newXp); setLevel(newLvl); setCompletedWorlds(newCompleted); setUnlockedWorlds(newUnlocked); setStars(newStars); setBadges(newBadges);
+    saveProgressToLocalStorage(playerName, selectedAvatar, newXp, newLvl, newUnlocked, newCompleted, newStars, newBadges);
+    setShowVictoryModal(false); setScreen('dashboard');
+  };
+
+  const handleChooseSikapOption = (option) => {
+    if (option.isCorrect) {
+      playSoundEffect('success');
+      alert(`🎉 BENAR!\nGara berkata: ${option.reaction}`);
+      
+      const newXp = xp + 15; 
+      setXp(newXp);
+      saveProgressToLocalStorage(playerName, selectedAvatar, newXp, level, unlockedWorlds, completedWorlds, stars, badges);
+
+      if (pilihSikapIndex + 1 === pilihSikapQuestions.length) {
+        playSoundEffect('fanfare');
+        setShowPilihSikapVictoryModal(true);
+      } else {
+        setPilihSikapIndex(prev => prev + 1);
+      }
+    } else {
+      playSoundEffect('error');
+      setPilihSikapWrongAttempts(prev => prev + 1);
+      alert(`❌ KURANG TEPAT\nGara membimbing: ${option.reaction}`);
+    }
+  };
+
+  const handleChooseKerjasamaOption = (option) => {
+    if (option.isCorrect) {
+      playSoundEffect('success');
+      alert(`🎉 BENAR!\nGara berkata: ${option.reaction}`);
+      
+      const newXp = xp + 15; 
+      setXp(newXp);
+      saveProgressToLocalStorage(playerName, selectedAvatar, newXp, level, unlockedWorlds, completedWorlds, stars, badges);
+
+      if (kerjasamaIndex + 1 === kerjasamaQuestions.length) {
+        playSoundEffect('fanfare');
+        setTimeout(() => {
+          handleCompleteKerjasamaProgress();
+        }, 500);
+      } else {
+        setKerjasamaIndex(prev => prev + 1);
+      }
+    } else {
+      playSoundEffect('error');
+      setKerjasamaWrongAttempts(prev => prev + 1);
+      alert(`❌ KURANG TEPAT\nGara membimbing: ${option.reaction}`);
+    }
+  };
+
+  const handleCompletePilihSikapRewards = () => {
+    playSoundEffect('click');
+    let starsEarned = 3;
+    if (pilihSikapWrongAttempts >= 3) starsEarned = 2;
+    if (pilihSikapWrongAttempts >= 5) starsEarned = 1;
+
+    const newXp = xp + 50; 
+    let newLvl = level;
+    if (newXp >= level * 50 && level < 5) newLvl = level + 1;
+
+    const newCompleted = completedWorlds.includes(2) ? completedWorlds : [...completedWorlds, 2];
+    const newUnlocked = unlockedWorlds.includes(3) ? unlockedWorlds : [...unlockedWorlds, 3];
+    const newStars = { ...stars, 2: starsEarned };
+    const newBadges = [...badges];
+    if (!newBadges.includes("badge_tertib")) newBadges.push("badge_tertib");
+
+    setXp(newXp);
+    setLevel(newLvl);
+    setCompletedWorlds(newCompleted);
+    setUnlockedWorlds(newUnlocked);
+    setStars(newStars);
+    setBadges(newBadges);
+
+    saveProgressToLocalStorage(playerName, selectedAvatar, newXp, newLvl, newUnlocked, newCompleted, newStars, newBadges);
+    setShowPilihSikapVictoryModal(false);
+    setScreen('dashboard');
+  };
+
+  const handleResetProgress = () => {
+    playSoundEffect('click');
+    if (window.confirm("Apakah kamu yakin ingin mengulangi petualangan dari awal? Semua poin dan lencana akan direset.")) {
+      localStorage.clear();
+      setPlayerName(''); setSelectedAvatar('hari'); setXp(0); setLevel(1);
+      setUnlockedWorlds([1]); setCompletedWorlds([]); setStars({ 1: 0, 2: 0, 3: 0, 4: 0 }); setBadges([]);
+      setScreen('landing');
+    }
+  };
+
+  const handleWinWorld1 = () => {
+    playSoundEffect('fanfare');
+    setShowVictoryModal(true);
+  };
+
+  return (
+    <div className="min-h-screen bg-[#E0F2FE] font-sans overflow-x-hidden relative select-none">
+      
+      {/* --- BACKGROUND SKY CLOUDS --- */}
+      <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden">
+        <motion.div 
+          className="absolute w-56 h-28 top-8 left-[-5%] opacity-50"
+          animate={{ x: ['0vw', '110vw'] }}
+          transition={{ repeat: Infinity, duration: 45, ease: 'linear' }}
+        >
+          <CloudSvg color="#FFFFFF" />
+        </motion.div>
+        <motion.div 
+          className="absolute w-72 h-36 top-32 right-[-10%] opacity-60"
+          animate={{ x: ['0vw', '-110vw'] }}
+          transition={{ repeat: Infinity, duration: 55, ease: 'linear' }}
+        >
+          <CloudSvg color="#F1F5F9" />
+        </motion.div>
+      </div>
+
+      {/* --- SCREEN MANAGER --- */}
+      <AnimatePresence mode="wait">
+        
+        {/* ================= SCREEN 1: LANDING ================= */}
+        {screen === 'landing' && (
+          <motion.div 
+            key="landing"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="min-h-screen flex flex-col justify-between"
+          >
+            <header className="px-6 py-4 flex justify-between items-center relative z-10 w-full max-w-6xl mx-auto">
+              <div className="flex items-center gap-2">
+                <span className="text-3xl">🇮🇩</span>
+                <span className="font-extrabold text-xl md:text-2xl text-slate-800 tracking-wider font-mono">
+                  PETUALANGAN PANCASILA
+                </span>
+              </div>
+            </header>
+
+            <div className="max-w-6xl mx-auto px-6 grid grid-cols-1 md:grid-cols-2 gap-8 items-center w-full flex-grow relative z-10 py-8">
+              <div className="flex flex-col items-center md:items-start text-center md:text-left space-y-6">
+                <div className="inline-block bg-[#4F9CF9]/20 text-[#2B6CB0] font-black px-4 py-2 rounded-full text-xs tracking-widest uppercase border border-[#4F9CF9]/30">
+                  SDN BUBUTAN IV SURABAYA
+                </div>
+                <h1 className="text-4xl md:text-6xl font-black text-slate-800 leading-tight">
+                  Ayo Ikut <br />
+                  <span className="text-[#4F9CF9] drop-shadow-[0_4px_0_rgba(30,41,59,1)]">Petualangan</span> <br />
+                  <span className="text-[#FFD93D] drop-shadow-[0_4px_0_rgba(30,41,59,1)]">Pancasila!</span>
+                </h1>
+                <p className="text-lg md:text-xl font-extrabold text-slate-600 max-w-md leading-relaxed">
+                  Bantu Gara mengumpulkan kembali 5 Bintang Pancasila yang jatuh di berbagai pulau di Nusantara!
+                </p>
+
+                <motion.button
+                  onClick={handleStartOnboarding}
+                  className="bg-[#FFD93D] text-slate-800 font-extrabold text-2xl px-12 py-5 rounded-3xl border-4 border-slate-800 shadow-[0_8px_0_0_#CD7F32] transition-all"
+                  whileTap={{ scale: 0.95 }}
+                >
+                  MULAI PETUALANGAN!
+                </motion.button>
+              </div>
+
+              <div className="flex justify-center items-center h-[300px] md:h-[450px]">
+                <div className="w-72 h-72 md:w-96 md:h-96">
+                  <GaraSvg pose="welcome" />
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {/* ================= SCREEN 2: ONBOARDING ================= */}
+        {screen === 'onboarding' && (
+          <motion.div 
+            key="onboarding"
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0 }}
+            className="min-h-screen flex items-center justify-center p-4 relative z-10"
+          >
+            <div className="bg-white border-4 border-slate-800 rounded-3xl p-6 md:p-10 w-full max-w-xl shadow-[8px_8px_0px_0px_rgba(30,41,59,1)] relative overflow-hidden">
+              <div className="absolute top-0 left-0 right-0 h-4 bg-gradient-to-r from-red-500 via-white to-red-500 border-b-4 border-slate-800" />
+              <button 
+                onClick={() => { playSoundEffect('click'); setScreen('landing'); }}
+                className="absolute top-6 left-6 text-slate-500 hover:text-slate-800 font-extrabold text-base flex items-center gap-1"
+              >
+                ◀ Kembali
+              </button>
+
+              <div className="text-center mt-6 mb-8">
+                <h2 className="text-3xl font-extrabold text-slate-800">SIAPA NAMA PETUALANGMU?</h2>
+                <p className="text-slate-500 font-bold mt-1">Isi nama panggilan dan pilih teman avatarmu!</p>
+              </div>
+
+              <form onSubmit={handleOnboardingSubmit} className="space-y-6">
+                <div className="space-y-2">
+                  <label className="block text-lg font-extrabold text-slate-700">Nama Panggilan:</label>
+                  <input 
+                    type="text"
+                    value={playerName}
+                    onChange={(e) => {
+                      setPlayerName(e.target.value.slice(0, 10));
+                      if (inputError) setInputError('');
+                    }}
+                    placeholder="Contoh: Adi"
+                    className="w-full text-center text-xl font-bold bg-slate-50 border-4 border-slate-800 rounded-2xl px-4 py-3 focus:outline-none focus:ring-4 focus:ring-[#4F9CF9]/50 placeholder-slate-400"
+                  />
+                  {inputError && <p className="text-red-500 font-extrabold text-center text-sm">⚠️ {inputError}</p>}
+                </div>
+
+                <div className="space-y-3">
+                  <label className="block text-lg font-extrabold text-slate-700 text-center">Pilih Teman Avatarmu:</label>
+                  <div className="grid grid-cols-4 gap-3">
+                    {avatars.map((av) => (
+                      <button
+                        key={av.id}
+                        type="button"
+                        onClick={() => { playSoundEffect('click'); setSelectedAvatar(av.id); }}
+                        className={`aspect-square rounded-2xl border-4 border-slate-800 flex flex-col items-center justify-center p-2 transition-all relative ${selectedAvatar === av.id ? 'bg-amber-100 border-amber-500 scale-105 shadow-[4px_4px_0px_0px_rgba(30,41,59,1)]' : 'bg-white hover:bg-slate-50'}`}
+                      >
+                        <span className="text-4xl md:text-5xl">{av.emoji}</span>
+                        <span className="text-xs font-black text-slate-800 mt-2">{av.name}</span>
+                        {selectedAvatar === av.id && (
+                          <div className="absolute -top-2 -right-2 bg-[#6BCB77] text-white border-2 border-slate-800 rounded-full w-6 h-6 flex items-center justify-center text-xs font-black">✓</div>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="pt-4 flex justify-center">
+                  <motion.button
+                    type="submit"
+                    className="bg-[#6BCB77] text-white font-extrabold text-xl px-12 py-4 rounded-2xl border-4 border-slate-800 shadow-[0_6px_0_0_#3B8A4C] active:translate-y-1 active:shadow-[0_2px_0_0_#3B8A4C]"
+                  >
+                    AYO BERANGKAT! 🚀
+                  </motion.button>
+                </div>
+              </form>
+            </div>
+          </motion.div>
+        )}
+
+        {/* ================= SCREEN 3: INTRO STORY ================= */}
+        {screen === 'intro' && (
+          <motion.div 
+            key="intro"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0 }}
+            className="min-h-screen flex flex-col items-center justify-center p-4 relative z-10 w-full max-w-3xl mx-auto"
+          >
+            <div className="w-full bg-white border-4 border-slate-800 rounded-3xl p-6 shadow-[6px_6px_0px_0px_rgba(30,41,59,1)] relative">
+              <div className="absolute bottom-[-16px] left-[50%] transform -translate-x-1/2 w-8 h-8 bg-white border-r-4 border-b-4 border-slate-800 rotate-45" />
+              <p className="text-xl md:text-2xl font-extrabold text-slate-800 text-center leading-relaxed">
+                "Oh tidak, <span className="text-[#4F9CF9]">{playerName}</span>! 5 Bintang Pancasila terjatuh dan hilang di Nusantara. Tanpa bintang-bintang itu, pulau kita akan kehilangan cahayanya. Maukah kamu membantuku menemukannya kembali?"
+              </p>
+            </div>
+
+            <div className="w-48 h-48 md:w-60 md:h-60 my-6">
+              <GaraSvg pose="welcome" />
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-4 w-full max-w-md justify-center">
+              <motion.button
+                onClick={handleStartAdventure}
+                className="bg-[#6BCB77] text-white font-extrabold text-lg px-8 py-4 rounded-2xl border-4 border-slate-800 shadow-[0_6px_0_0_#3B8A4C] active:translate-y-1 active:shadow-[0_2px_0_0_#3B8A4C] text-center"
+              >
+                Tentu saja, Ayo! 🌟
+              </motion.button>
+            </div>
+          </motion.div>
+        )}
+
+        {/* ================= SCREEN 4: DASHBOARD & MAP ================= */}
+        {screen === 'dashboard' && (
+          <motion.div 
+            key="dashboard"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="min-h-screen flex flex-col relative z-10 w-full"
+          >
+            {/* MINI-DASHBOARD HEADER */}
+            <header className="bg-white border-b-4 border-slate-800 px-4 py-3 sticky top-0 z-30 w-full shadow-[0_4px_0_0_rgba(30,41,59,0.05)]">
+              <div className="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-14 h-14 rounded-full border-4 border-slate-800 bg-[#E0F2FE] flex items-center justify-center text-3xl shadow-[2px_2px_0px_0px_rgba(30,41,59,1)]">
+                    {getPlayerAvatarEmoji()}
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-slate-800 text-lg leading-tight">{playerName}</h3>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="bg-[#FF8E3C] text-white text-[10px] font-black px-2 py-0.5 rounded-full border border-slate-800">
+                        LVL {level}
+                      </span>
+                      <span className="text-slate-500 text-xs font-bold">XP: {xp} / {level * 50}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="w-full md:w-64 space-y-1">
+                  <div className="w-full bg-slate-100 border-3 border-slate-800 h-6 rounded-full overflow-hidden relative shadow-[inset_0_2px_4px_rgba(0,0,0,0.1)]">
+                    <motion.div 
+                      className="bg-[#6BCB77] h-full"
+                      style={{ width: `${Math.min((xp / (level * 50)) * 100, 100)}%` }}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button onClick={() => { playSoundEffect('click'); setScreen('badges'); }} className="bg-[#FFD93D] text-slate-800 font-extrabold text-sm px-4 py-2 rounded-xl border-3 border-slate-800 shadow-[2px_4px_0px_0px_rgba(30,41,59,1)]">👑 Lencana ({badges.length})</button>
+                  <button onClick={() => { playSoundEffect('click'); setScreen('profile'); }} className="bg-[#4F9CF9] text-white font-extrabold text-sm px-4 py-2 rounded-xl border-3 border-slate-800 shadow-[2px_4px_0px_0px_rgba(30,41,59,1)]">📊 Rapor</button>
+                  <button onClick={handleResetProgress} className="bg-red-500 text-white font-extrabold text-sm p-2 rounded-xl border-3 border-slate-800">🔄</button>
+                </div>
+              </div>
+            </header>
+
+            {/* ADVENTURE MAP */}
+            <div className="flex-grow flex flex-col items-center justify-center relative py-10 px-4">
+              <div className="relative w-full max-w-4xl bg-[#93C5FD] border-4 border-slate-800 rounded-[40px] p-8 md:p-12 shadow-[10px_12px_0px_0px_rgba(30,41,59,1)] overflow-hidden min-h-[420px] flex items-center justify-center">
+                <div className="absolute inset-0 opacity-25 pointer-events-none">
+                  <NusantaraMapSvg />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6 w-full z-10 relative">
+                  {worlds.map((w) => {
+                    const isUnlocked = unlockedWorlds.includes(w.id);
+                    const isCompleted = completedWorlds.includes(w.id);
+                    const worldStars = stars[w.id] || 0;
+                    const IslandComponent = w.svgComponent;
+
+                    return (
+                      <motion.div
+                        key={w.id}
+                        className={`bg-white border-4 border-slate-800 rounded-3xl p-4 flex flex-col items-center text-center relative ${isUnlocked ? 'cursor-pointer hover:shadow-[4px_6px_0px_0px_rgba(30,41,59,1)]' : 'cursor-not-allowed opacity-80 bg-slate-50'}`}
+                        whileHover={isUnlocked ? { y: -8, scale: 1.05 } : {}}
+                        onClick={() => {
+                          if (isUnlocked) handleOpenWorld(w);
+                          else playSoundEffect('error');
+                        }}
+                      >
+                        <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-slate-800 text-white font-black text-[9px] px-3 py-1 rounded-full uppercase">Dunia {w.id}</div>
+                        <div className="my-6 relative">
+                          {isUnlocked ? <IslandComponent /> : <div className="w-20 h-20 flex items-center justify-center"><LockSvg /></div>}
+                          {isCompleted && (
+                            <div className="absolute -bottom-2 flex justify-center w-full gap-0.5">
+                              {[...Array(worldStars)].map((_, i) => <div key={i} className="w-5 h-5"><StarSvg /></div>)}
+                            </div>
+                          )}
+                        </div>
+                        <h4 className="font-extrabold text-slate-800 text-sm leading-tight">{w.title}</h4>
+                        <div className="mt-3 w-full">
+                          {isUnlocked ? (
+                            isCompleted ? <span className="bg-[#6BCB77]/20 text-[#3B8A4C] text-[10px] font-black py-1 px-3 rounded-full border border-[#6BCB77]/30 block text-center">✓ Selesai</span>
+                            : <span className="bg-[#4F9CF9]/20 text-[#2B6CB0] text-[10px] font-black py-1 px-3 rounded-full border border-[#4F9CF9]/30 block text-center animate-pulse">Mainkan 🌟</span>
+                          ) : <span className="bg-slate-100 text-slate-400 text-[10px] font-black py-1 px-3 rounded-full border border-slate-200 block text-center">🔒 Terkunci</span>}
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* DETAIL POPUP */}
+            <AnimatePresence>
+              {activeWorldDetail && (
+                <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                  <motion.div className="bg-white border-4 border-slate-800 rounded-3xl p-6 w-full max-w-md shadow-[8px_8px_0px_0px_rgba(30,41,59,1)] relative" initial={{ scale: 0.9 }} animate={{ scale: 1 }} exit={{ scale: 0.9 }}>
+                    <button onClick={() => { playSoundEffect('click'); setActiveWorldDetail(null); }} className="absolute top-4 right-4 font-black text-slate-500 hover:text-slate-800 text-lg">✕</button>
+                    <span className="text-xs font-black text-[#4F9CF9] uppercase block mb-1">Dunia {activeWorldDetail.id}</span>
+                    <h3 className="text-2xl font-black text-slate-800">{activeWorldDetail.title}</h3>
+                    <p className="text-slate-600 font-bold text-sm mt-3">{activeWorldDetail.desc}</p>
+                    <div className="bg-slate-50 border-2 border-slate-800 p-4 rounded-2xl mt-4">
+                      <span className="text-xs font-black text-[#FF8E3C] block uppercase">Misi Game:</span>
+                      <p className="text-slate-800 font-extrabold text-sm">{activeWorldDetail.misi}</p>
+                    </div>
+                    <div className="flex flex-col gap-2 mt-6">
+                      <button onClick={handleGoToLearning} className="w-full bg-white hover:bg-slate-50 text-slate-800 font-extrabold py-3 rounded-2xl border-3 border-slate-800 shadow-[2px_4px_0px_0px_rgba(30,41,59,1)]">📖 Belajar Materi</button>
+                      
+                      {/* Navigasi khusus Dunia 2 & 4 */}
+                      {activeWorldDetail.id === 2 ? (
+                        <div className="grid grid-cols-3 gap-2">
+                          <button onClick={() => handlePlayWorldGame(activeWorldDetail.id)} className="bg-[#6BCB77] hover:bg-[#59B264] text-white font-extrabold py-3.5 rounded-2xl border-3 border-slate-800 shadow-[2px_4px_0px_0px_rgba(30,41,59,1)] text-[10px] md:text-xs">🎮 Kotak Disiplin</button>
+                          <button onClick={initPilihSikapGame} className="bg-[#FF8E3C] hover:bg-[#E27627] text-white font-extrabold py-3.5 rounded-2xl border-3 border-slate-800 shadow-[2px_4px_0px_0px_rgba(30,41,59,1)] text-[10px] md:text-xs">✨ Pilih Sikap</button>
+                          <button onClick={initKelompokAturanGame} className="bg-[#FFE366] text-slate-800 font-extrabold py-3.5 rounded-2xl border-3 border-slate-800 shadow-[2px_4px_0px_0px_rgba(30,41,59,1)] text-[10px] md:text-xs">🧩 Pilah Aturan</button>
+                        </div>
+                      ) : activeWorldDetail.id === 4 ? (
+                        <div className="grid grid-cols-2 gap-2">
+                          <button onClick={() => handlePlayWorldGame(activeWorldDetail.id)} className="bg-[#14B8A6] hover:bg-[#0d9488] text-white font-extrabold py-3.5 rounded-2xl border-3 border-slate-800 shadow-[2px_4px_0px_0px_rgba(30,41,59,1)] text-[10px] md:text-xs">🗑️ Pilah Sampah</button>
+                          <button onClick={initKerjasamaGame} className="bg-[#059669] hover:bg-[#047857] text-white font-extrabold py-3.5 rounded-2xl border-3 border-slate-800 shadow-[2px_4px_0px_0px_rgba(30,41,59,1)] text-[10px] md:text-xs">🤝 Sikap Kerjasama</button>
+                        </div>
+                      ) : (
+                        <button onClick={() => handlePlayWorldGame(activeWorldDetail.id)} className="w-full bg-[#6BCB77] hover:bg-[#59B264] text-white font-extrabold py-3 rounded-2xl border-3 border-slate-800 shadow-[2px_4px_0px_0px_rgba(30,41,59,1)]">🎮 Mulai Game!</button>
+                      )}
+                    </div>
+                  </motion.div>
+                </div>
+              )}
+            </AnimatePresence>
+          </motion.div>
+        )}
+
+        {/* ================= SCREEN 5: LAYAR BELAJAR KARTU 3D ================= */}
+        {screen === 'learning' && (
+          <motion.div key="learning" className="min-h-screen p-6 z-10 w-full max-w-5xl mx-auto flex flex-col justify-between" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            <header className="flex justify-between items-center py-2 border-b-4 border-slate-800 bg-white rounded-2xl px-4">
+              <button onClick={() => { playSoundEffect('click'); setScreen('dashboard'); }} className="bg-white hover:bg-slate-50 text-slate-800 font-extrabold px-4 py-2 rounded-xl border-3 border-slate-800 shadow-[2px_4px_0px_0px_rgba(30,41,59,1)]">◀ Peta</button>
+              <h3 className="text-base md:text-xl font-black text-slate-800">Ruang Belajar Pancasila 🇮🇩</h3>
+              <span className="text-sm font-black text-[#FF8E3C] bg-amber-50 px-3 py-1 rounded-full border border-amber-300">Langkah {activeCardIndex + 1} / 5</span>
+            </header>
+
+            <div className="my-6 grid grid-cols-1 md:grid-cols-2 gap-8 items-center bg-white border-4 border-slate-800 rounded-[36px] p-6 md:p-8 shadow-[8px_8px_0px_0px_rgba(30,41,59,1)]">
+              <div className="flex flex-col items-center justify-center bg-gradient-to-br from-amber-50 to-orange-100/50 p-4 rounded-3xl border-3 border-slate-800">
+                <div className="w-56 h-56 md:w-72 md:h-72"><GarudaShieldIllustrationSvg activeSila={activeCardIndex + 1} /></div>
+              </div>
+
+              <div className="flex flex-col h-full justify-between">
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 bg-slate-800 text-white font-black rounded-2xl flex items-center justify-center text-xl shadow-[2px_2px_0px_0px_rgba(30,41,59,1)]">{dunia1Cards[activeCardIndex].sila}</div>
+                    <div>
+                      <span className="text-[10px] font-black text-[#FF8E3C] block uppercase">Nama Simbol Sila</span>
+                      <h4 className="text-xl md:text-2xl font-black text-slate-800 leading-none">{dunia1Cards[activeCardIndex].nama}</h4>
+                    </div>
+                  </div>
+                  <div className="border-l-4 border-[#4F9CF9] pl-3 py-1 bg-sky-50 rounded-r-xl">
+                    <p className="text-slate-800 font-extrabold text-base md:text-lg italic">"{dunia1Cards[activeCardIndex].bunyi}"</p>
+                  </div>
+                  <p className="text-slate-600 font-bold text-sm md:text-base leading-relaxed">{dunia1Cards[activeCardIndex].makna}</p>
+                </div>
+
+                <div className="flex gap-3 mt-6 pt-4 border-t-2 border-slate-100">
+                  {activeCardIndex > 0 && <button onClick={() => { playSoundEffect('click'); setActiveCardIndex(prev => prev - 1); }} className="bg-white hover:bg-slate-50 text-slate-800 font-black px-4 py-3 rounded-xl border-3 border-slate-800 shadow-[2px_3px_0px_0px_rgba(30,41,59,1)]">◀ Mundur</button>}
+                  {activeCardIndex < 4 ? <button onClick={handleNextCard} className="flex-grow bg-[#4F9CF9] text-white font-black py-3 rounded-xl border-3 border-slate-800 shadow-[2px_4px_0px_0px_rgba(30,41,59,1)]">Lanjut Sila Berikutnya 📖</button>
+                  : <button onClick={handleGoToGame} className="flex-grow bg-[#6BCB77] text-white font-black py-3 rounded-xl border-3 border-slate-800 shadow-[2px_4px_0px_0px_rgba(30,41,59,1)]">Ayo Tantang Game Sila! 🎮</button>}
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {/* ================= SCREEN 5B: LAYAR BELAJAR LINGKUNGAN RUMAH & SEKOLAH (DUNIA 2) ================= */}
+        {screen === 'learningWorld2' && (
+          <motion.div key="learningWorld2" className="min-h-screen p-6 z-10 w-full max-w-5xl mx-auto flex flex-col justify-between" initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }}>
+            <header className="flex flex-col sm:flex-row gap-4 justify-between items-center py-3 border-b-4 border-slate-800 bg-white rounded-2xl px-4 shadow-[2px_4px_0px_0px_rgba(30,41,59,1)]">
+              <button onClick={() => { playSoundEffect('click'); setScreen('dashboard'); }} className="bg-white hover:bg-slate-50 text-slate-800 font-extrabold px-4 py-2 rounded-xl border-3 border-slate-800 shadow-[2px_3px_0px_0px_rgba(30,41,59,1)] w-full sm:w-auto">◀ Peta</button>
+              <h3 className="text-base md:text-xl font-black text-slate-800 text-center">Eksplorasi Lingkungan 🏡🏫</h3>
+              <span className="text-sm font-black text-[#6BCB77] bg-green-50 px-4 py-2 rounded-xl border-2 border-green-300 w-full sm:w-auto text-center">
+                Diperiksa {exploredObjects.length} / 10 Aturan
+              </span>
+            </header>
+
+            {/* TAB NAVIGASI RUMAH & SEKOLAH */}
+            <div className="flex flex-col sm:flex-row gap-4 justify-center my-6">
+              <button 
+                onClick={() => { playSoundEffect('click'); setActiveEnvTab('rumah'); setSelectedHomeObject(null); }}
+                className={`px-5 py-3 rounded-2xl font-black border-4 transition-all shadow-[2px_4px_0px_0px_rgba(30,41,59,1)] ${
+                  activeEnvTab === 'rumah' 
+                    ? 'bg-[#FFD93D] border-slate-800 text-slate-800 scale-105' 
+                    : 'bg-white border-slate-300 text-slate-400 hover:bg-slate-50'
+                }`}
+              >
+                🏡 Aturan di Rumah
+              </button>
+              <button 
+                onClick={() => { playSoundEffect('click'); setActiveEnvTab('sekolah'); setSelectedHomeObject(null); }}
+                className={`px-5 py-3 rounded-2xl font-black border-4 transition-all shadow-[2px_4px_0px_0px_rgba(30,41,59,1)] ${
+                  activeEnvTab === 'sekolah' 
+                    ? 'bg-[#4F9CF9] border-slate-800 text-white scale-105' 
+                    : 'bg-white border-slate-300 text-slate-400 hover:bg-slate-50'
+                }`}
+              >
+                🏫 Aturan di Sekolah
+              </button>
+            </div>
+
+            {/* ELEMEN INTERAKTIF MATERI */}
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-stretch flex-grow">
+              
+              <div className={`md:col-span-7 border-4 border-slate-800 rounded-[32px] p-6 relative min-h-[350px] shadow-[4px_6px_0px_0px_rgba(30,41,59,1)] overflow-hidden ${activeEnvTab === 'rumah' ? 'bg-amber-50' : 'bg-sky-50'}`}>
+                <span className="absolute top-3 left-4 text-xs font-black text-slate-400 uppercase tracking-widest block">
+                  Pilih Kartu Materi:
+                </span>
+                
+                <div className="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none">
+                  <span className="text-9xl">{activeEnvTab === 'rumah' ? '🏡' : '🏫'}</span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 h-full content-center pt-6 relative z-10">
+                  {(activeEnvTab === 'rumah' ? materiRumah : materiSekolah).map((obj) => {
+                    const isChecked = exploredObjects.includes(obj.id);
+                    return (
+                      <motion.button
+                        key={obj.id}
+                        onClick={() => handleExploreObject(obj)}
+                        className={`p-4 rounded-2xl border-4 border-slate-800 flex flex-col items-center justify-center text-center transition-all shadow-[2px_4px_0px_0px_rgba(30,41,59,1)] active:translate-y-0.5 active:shadow-none ${
+                          selectedHomeObject?.id === obj.id 
+                            ? 'bg-[#FFE366] scale-105' 
+                            : isChecked 
+                              ? 'bg-green-100 hover:bg-green-200' 
+                              : 'bg-white hover:bg-slate-50'
+                        }`}
+                        whileHover={{ scale: 1.05 }}
+                      >
+                        <span className="text-4xl block mb-2">{obj.emoji}</span>
+                        <span className="font-extrabold text-slate-800 text-[10px] sm:text-xs leading-tight">{obj.title}</span>
+                        {isChecked && (
+                          <span className="text-[9px] font-black text-green-600 block mt-1 uppercase tracking-wider">✓ Selesai</span>
+                        )}
+                      </motion.button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Kolom Kanan: Detail Aturan */}
+              <div className="md:col-span-5 bg-white border-4 border-slate-800 rounded-[32px] p-6 shadow-[4px_6px_0px_0px_rgba(30,41,59,1)] flex flex-col justify-between">
+                {selectedHomeObject ? (
+                  <div className="space-y-4">
+                    <span className="text-5xl block mb-2">{selectedHomeObject.emoji}</span>
+                    <h4 className="text-xl md:text-2xl font-black text-slate-800 leading-none">
+                      {selectedHomeObject.title}
+                    </h4>
+                    <p className="text-slate-600 font-bold text-sm md:text-base leading-relaxed">
+                      {selectedHomeObject.desc}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="text-center py-12">
+                    <span className="text-5xl block animate-bounce mb-3">👈</span>
+                    <h4 className="text-lg font-black text-slate-800">Mari Belajar Bersama!</h4>
+                    <p className="text-slate-500 font-bold text-xs mt-1">Ketuk ubin kartu materi di sebelah kiri untuk mempelajari setiap aturan yang ada di rumah dan sekolah ya!</p>
+                  </div>
+                )}
+
+                <div className="pt-4 border-t-2 border-slate-100 mt-auto">
+                  {exploredObjects.length === 10 ? (
+                    <div className="flex flex-col gap-2">
+                      <button 
+                        onClick={() => handlePlayWorldGame(2)}
+                        className="w-full bg-[#6BCB77] hover:bg-[#59B264] text-white font-black py-3 rounded-xl border-3 border-slate-800 shadow-[2px_3px_0px_0px_rgba(30,41,59,1)] active:translate-y-0.5 text-xs md:text-sm transition-all"
+                      >
+                        Aturan: Kotak Disiplin 🎮
+                      </button>
+                      <button 
+                        onClick={initPilihSikapGame}
+                        className="w-full bg-[#FF8E3C] hover:bg-[#E27627] text-white font-black py-3 rounded-xl border-3 border-slate-800 shadow-[2px_3px_0px_0px_rgba(30,41,59,1)] active:translate-y-0.5 text-xs md:text-sm transition-all"
+                      >
+                        Sikap: Tebak Sikap ✨
+                      </button>
+                      <button 
+                        onClick={initKelompokAturanGame}
+                        className="w-full bg-[#FFE366] text-slate-800 font-black py-3 rounded-xl border-3 border-slate-800 shadow-[2px_3px_0px_0px_rgba(30,41,59,1)] active:translate-y-0.5 text-xs md:text-sm transition-all"
+                      >
+                        Kelompokkan Aturan 🧩
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="text-[10px] font-black text-slate-400 text-center uppercase tracking-widest bg-slate-50 p-2 rounded-xl border border-slate-200">
+                      Buka gembok game dengan mengetuk & membaca ke-10 aturan rumah dan sekolah di atas terlebih dahulu!
+                    </p>
+                  )}
+                </div>
+              </div>
+
+            </div>
+
+            {/* Bimbingan Gara */}
+            <div className="flex gap-4 items-center bg-white border-3 border-slate-800 rounded-2xl p-3 mt-6 shadow-[4px_4px_0px_0px_rgba(30,41,59,1)] max-w-4xl mx-auto">
+              <div className="w-14 h-14 shrink-0"><GaraSvg pose="welcome" /></div>
+              <p className="text-xs font-bold text-slate-700 leading-tight">
+                "Aturan di rumah dan sekolah melatih kita hidup rukun dan mandiri! Ketuk semua 10 kartu materi di atas untuk membuka gembok mini-games seru di bawah!"
+              </p>
+            </div>
+          </motion.div>
+        )}
+
+        {/* ================= SCREEN 5C: LAYAR BELAJAR FESTIVAL NUSANTARA (DUNIA 3) ================= */}
+        {screen === 'learningWorld3' && (
+          <motion.div key="learningWorld3" className="min-h-screen p-6 z-10 w-full max-w-5xl mx-auto flex flex-col justify-between" initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }}>
+            <header className="flex flex-col sm:flex-row gap-4 justify-between items-center py-3 border-b-4 border-slate-800 bg-white rounded-2xl px-4 shadow-[2px_4px_0px_0px_rgba(30,41,59,1)]">
+              <button onClick={() => { playSoundEffect('click'); setScreen('dashboard'); }} className="bg-white hover:bg-slate-50 text-slate-800 font-extrabold px-4 py-2 rounded-xl border-3 border-slate-800 shadow-[2px_3px_0px_0px_rgba(30,41,59,1)] w-full sm:w-auto">◀ Peta Nusantara</button>
+              <h3 className="text-base md:text-xl font-black text-slate-800 text-center">Festival Nusantara 🎭</h3>
+              <span className="text-sm font-black text-[#4F9CF9] bg-blue-50 px-4 py-2 rounded-xl border-2 border-blue-300 w-full sm:w-auto text-center">
+                Diperiksa {exploredFestivalObjects.length} / 5 Budaya
+              </span>
+            </header>
+
+            <div className="my-6 grid grid-cols-1 md:grid-cols-12 gap-8 items-stretch flex-grow">
+              
+              {/* Kolom Kiri: Ilustrasi Interaktif Budaya */}
+              <div className="md:col-span-7 bg-indigo-50 border-4 border-slate-800 rounded-[32px] p-6 relative min-h-[350px] shadow-[4px_6px_0px_0px_rgba(30,41,59,1)] overflow-hidden">
+                <span className="absolute top-3 left-4 text-xs font-black text-slate-400 uppercase tracking-widest block">
+                  Pilih Paviliun Budaya:
+                </span>
+                
+                <div className="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none">
+                  <span className="text-9xl">🗺️</span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 h-full content-center pt-6 relative z-10">
+                  {materiFestival.map((obj) => {
+                    const isChecked = exploredFestivalObjects.includes(obj.id);
+                    return (
+                      <motion.button
+                        key={obj.id}
+                        onClick={() => handleExploreFestival(obj)}
+                        className={`p-4 rounded-2xl border-4 border-slate-800 flex flex-col items-center justify-center text-center transition-all shadow-[2px_4px_0px_0px_rgba(30,41,59,1)] active:translate-y-0.5 active:shadow-none ${
+                          selectedFestivalObject?.id === obj.id 
+                            ? 'bg-[#FFE366] scale-105' 
+                            : isChecked 
+                              ? 'bg-blue-100 hover:bg-blue-200' 
+                              : 'bg-white hover:bg-slate-50'
+                        }`}
+                        whileHover={{ scale: 1.05 }}
+                      >
+                        <span className="text-4xl block mb-2">{obj.emoji}</span>
+                        <span className="font-extrabold text-slate-800 text-[10px] sm:text-xs leading-tight">{obj.title}</span>
+                        {isChecked && (
+                          <span className="text-[9px] font-black text-[#4F9CF9] block mt-1 uppercase tracking-wider">✓ Dipelajari</span>
+                        )}
+                      </motion.button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Kolom Kanan: Detail Tradisi */}
+              <div className="md:col-span-5 bg-white border-4 border-slate-800 rounded-[32px] p-6 shadow-[4px_6px_0px_0px_rgba(30,41,59,1)] flex flex-col justify-between">
+                {selectedFestivalObject ? (
+                  <div className="space-y-4">
+                    <span className="text-5xl block mb-2">{selectedFestivalObject.emoji}</span>
+                    <h4 className="text-xl md:text-2xl font-black text-slate-800 leading-none">
+                      {selectedFestivalObject.title}
+                    </h4>
+                    <p className="text-slate-600 font-bold text-sm md:text-base leading-relaxed">
+                      {selectedFestivalObject.desc}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="text-center py-12">
+                    <span className="text-5xl block animate-bounce mb-3">👈</span>
+                    <h4 className="text-lg font-black text-slate-800">Keliling Nusantara!</h4>
+                    <p className="text-slate-500 font-bold text-xs mt-1">Ketuk kartu paviliun di sebelah kiri untuk mempelajari suku, adat, dan tradisi dari berbagai provinsi!</p>
+                  </div>
+                )}
+
+                <div className="pt-4 border-t-2 border-slate-100 mt-auto">
+                  {exploredFestivalObjects.length === 5 ? (
+                    <div className="flex flex-col gap-2">
+                      <button 
+                        onClick={() => handlePlayWorldGame(3)}
+                        className="w-full bg-[#4F9CF9] hover:bg-[#3b82f6] text-white font-black py-4 rounded-xl border-3 border-slate-800 shadow-[2px_3px_0px_0px_rgba(30,41,59,1)] active:translate-y-0.5 text-xs md:text-base transition-all"
+                      >
+                        Uji Ingatan: Game Memori! 🃏
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="text-[10px] font-black text-slate-400 text-center uppercase tracking-widest bg-slate-50 p-2 rounded-xl border border-slate-200">
+                      Pelajari ke-5 budaya nusantara di atas untuk membuka gembok game memori toleransi!
+                    </p>
+                  )}
+                </div>
+              </div>
+
+            </div>
+
+            {/* Bimbingan Gara */}
+            <div className="flex gap-4 items-center bg-white border-3 border-slate-800 rounded-2xl p-3 mt-6 shadow-[4px_4px_0px_0px_rgba(30,41,59,1)] max-w-4xl mx-auto">
+              <div className="w-14 h-14 shrink-0"><GaraSvg pose="welcome" /></div>
+              <p className="text-xs font-bold text-slate-700 leading-tight">
+                "Indonesia kaya akan suku bangsa dan budaya! Semuanya hidup rukun berdampingan. Mari pelajari semuanya agar menjadi anak yang toleran!"
+              </p>
+            </div>
+          </motion.div>
+        )}
+
+        {/* ================= SCREEN 5D: LAYAR BELAJAR INDONESIA HIJAU (DUNIA 4) ================= */}
+        {screen === 'learningWorld4' && (
+          <motion.div key="learningWorld4" className="min-h-screen p-6 z-10 w-full max-w-5xl mx-auto flex flex-col justify-between" initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }}>
+            <header className="flex flex-col sm:flex-row gap-4 justify-between items-center py-3 border-b-4 border-slate-800 bg-white rounded-2xl px-4 shadow-[2px_4px_0px_0px_rgba(30,41,59,1)]">
+              <button onClick={() => { playSoundEffect('click'); setScreen('dashboard'); }} className="bg-white hover:bg-slate-50 text-slate-800 font-extrabold px-4 py-2 rounded-xl border-3 border-slate-800 shadow-[2px_3px_0px_0px_rgba(30,41,59,1)] w-full sm:w-auto">◀ Peta Nusantara</button>
+              <h3 className="text-base md:text-xl font-black text-slate-800 text-center">Indonesia Hijau 🌳</h3>
+              <span className="text-sm font-black text-[#14B8A6] bg-teal-50 px-4 py-2 rounded-xl border-2 border-teal-300 w-full sm:w-auto text-center">
+                Diperiksa {exploredLingkunganObjects.length} / 6 Aksi
+              </span>
+            </header>
+
+            <div className="my-6 grid grid-cols-1 md:grid-cols-12 gap-8 items-stretch flex-grow">
+              
+              {/* Kolom Kiri: Ilustrasi Interaktif Kebersihan & Kerjasama */}
+              <div className="md:col-span-7 bg-teal-50 border-4 border-slate-800 rounded-[32px] p-6 relative min-h-[350px] shadow-[4px_6px_0px_0px_rgba(30,41,59,1)] overflow-hidden">
+                <span className="absolute top-3 left-4 text-xs font-black text-slate-400 uppercase tracking-widest block">
+                  Pilih Kartu Aksi Hijau:
+                </span>
+                
+                <div className="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none">
+                  <span className="text-9xl">🌱</span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 h-full content-center pt-6 relative z-10">
+                  {materiLingkungan.map((obj) => {
+                    const isChecked = exploredLingkunganObjects.includes(obj.id);
+                    return (
+                      <motion.button
+                        key={obj.id}
+                        onClick={() => handleExploreLingkungan(obj)}
+                        className={`p-4 rounded-2xl border-4 border-slate-800 flex flex-col items-center justify-center text-center transition-all shadow-[2px_4px_0px_0px_rgba(30,41,59,1)] active:translate-y-0.5 active:shadow-none ${
+                          selectedLingkunganObject?.id === obj.id 
+                            ? 'bg-[#FFE366] scale-105' 
+                            : isChecked 
+                              ? 'bg-teal-100 hover:bg-teal-200' 
+                              : 'bg-white hover:bg-slate-50'
+                        }`}
+                        whileHover={{ scale: 1.05 }}
+                      >
+                        <span className="text-4xl block mb-2">{obj.emoji}</span>
+                        <span className="font-extrabold text-slate-800 text-[10px] sm:text-xs leading-tight">{obj.title}</span>
+                        {isChecked && (
+                          <span className="text-[9px] font-black text-[#14B8A6] block mt-1 uppercase tracking-wider">✓ Dipelajari</span>
+                        )}
+                      </motion.button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Kolom Kanan: Detail Aksi Hijau */}
+              <div className="md:col-span-5 bg-white border-4 border-slate-800 rounded-[32px] p-6 shadow-[4px_6px_0px_0px_rgba(30,41,59,1)] flex flex-col justify-between">
+                {selectedLingkunganObject ? (
+                  <div className="space-y-4">
+                    <span className="text-5xl block mb-2">{selectedLingkunganObject.emoji}</span>
+                    <h4 className="text-xl md:text-2xl font-black text-slate-800 leading-none">
+                      {selectedLingkunganObject.title}
+                    </h4>
+                    <p className="text-slate-600 font-bold text-sm md:text-base leading-relaxed">
+                      {selectedLingkunganObject.desc}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="text-center py-12">
+                    <span className="text-5xl block animate-bounce mb-3">👈</span>
+                    <h4 className="text-lg font-black text-slate-800">Ayo Jaga Bumi Kita!</h4>
+                    <p className="text-slate-500 font-bold text-xs mt-1">Ketuk kartu di sebelah kiri untuk mengetahui cara menjaga kebersihan rumah, sekolah, dan pentingnya kerja bakti!</p>
+                  </div>
+                )}
+
+                <div className="pt-4 border-t-2 border-slate-100 mt-auto">
+                  {exploredLingkunganObjects.length === 6 ? (
+                    <div className="flex flex-col gap-2">
+                      <button 
+                        onClick={() => handlePlayWorldGame(4)}
+                        className="w-full bg-[#14B8A6] hover:bg-[#0d9488] text-white font-black py-3.5 rounded-xl border-3 border-slate-800 shadow-[2px_3px_0px_0px_rgba(30,41,59,1)] active:translate-y-0.5 text-xs md:text-base transition-all"
+                      >
+                        Bantu Pilah Sampah! 🗑️
+                      </button>
+                      <button 
+                        onClick={initKerjasamaGame}
+                        className="w-full bg-[#059669] hover:bg-[#047857] text-white font-black py-3.5 rounded-xl border-3 border-slate-800 shadow-[2px_3px_0px_0px_rgba(30,41,59,1)] active:translate-y-0.5 text-xs md:text-base transition-all"
+                      >
+                        Temukan Sikap Kerjasama! 🤝
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="text-[10px] font-black text-slate-400 text-center uppercase tracking-widest bg-slate-50 p-2 rounded-xl border border-slate-200">
+                      Pelajari ke-6 aksi menjaga lingkungan di atas untuk membuka game memilah sampah dan gotong royong!
+                    </p>
+                  )}
+                </div>
+              </div>
+
+            </div>
+
+            {/* Bimbingan Gara */}
+            <div className="flex gap-4 items-center bg-white border-3 border-slate-800 rounded-2xl p-3 mt-6 shadow-[4px_4px_0px_0px_rgba(30,41,59,1)] max-w-4xl mx-auto">
+              <div className="w-14 h-14 shrink-0"><GaraSvg pose="welcome" /></div>
+              <p className="text-xs font-bold text-slate-700 leading-tight">
+                "Pekerjaan yang berat akan terasa ringan jika kita bergotong royong! Ayo jaga kebersihan rumah dan sekolah kita bersama-sama!"
+              </p>
+            </div>
+          </motion.div>
+        )}
+
+        {/* ================= SCREEN 6: GAME 1 (DUNIA 1) ================= */}
+        {screen === 'game1' && (
+          <motion.div key="game1" className="min-h-screen p-4 z-10 w-full max-w-4xl mx-auto flex flex-col justify-between" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            <header className="flex justify-between items-center py-2 border-b-4 border-slate-800 bg-white rounded-2xl px-4">
+              <button onClick={() => { playSoundEffect('click'); setScreen('dashboard'); }} className="bg-white hover:bg-slate-50 text-slate-800 font-extrabold px-3 py-1.5 rounded-lg border-2 border-slate-800 text-sm shadow-[1px_2px_0px_0px_rgba(30,41,59,1)] active:translate-y-0.5 active:shadow-none">◀ Keluar</button>
+              <h3 className="font-extrabold text-slate-800 text-sm md:text-lg">Game 1: Pasangkan Simbol Sila</h3>
+              <div className="text-right">
+                <span className="text-slate-500 text-[10px] font-black block">Salah Coba:</span>
+                <span className="text-red-500 font-black text-sm">{wrongAttempts} Kali</span>
+              </div>
+            </header>
+
+            <div className="my-6 grid grid-cols-1 md:grid-cols-2 gap-8 items-center bg-white border-4 border-slate-800 rounded-[32px] p-6 shadow-[6px_6px_0px_0px_rgba(30,41,59,1)] relative overflow-hidden">
+              <div className="space-y-4">
+                <div className="bg-amber-50 border-3 border-slate-800 p-3 rounded-2xl text-center">
+                  <span className="font-black text-slate-800 text-xs md:text-sm block">👉 KETUK LAMBANG HINGGA MENYALA, LALU PASANGKAN DI KANAN!</span>
+                </div>
+                <div className="flex flex-wrap justify-center gap-4">
+                  {draggableSymbols.map((item) => {
+                    const isSelected = selectedSymbol === item.id;
+                    return (
+                      <button key={item.id} onClick={() => handleSelectSymbol(item)} className={`border-4 rounded-2xl p-3 flex flex-col items-center w-24 h-24 justify-center shadow-[2px_4px_0px_0px_rgba(30,41,59,1)] hover:scale-105 transition-colors ${isSelected ? 'bg-amber-100 border-[#FF8E3C] ring-4 ring-[#FF8E3C]/30' : 'bg-white border-slate-800'}`}>
+                        <SilaIconSvg type={item.simbol} />
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                {targetSlots.map((slot) => {
+                  const isMatched = matchedPairs.includes(slot.sila);
+                  return (
+                    <div key={slot.sila} onClick={() => !isMatched && handleSelectSlot(slot.sila)} className={`border-3 rounded-2xl p-2 md:p-3 flex items-center justify-between transition-all cursor-pointer ${isMatched ? 'bg-green-100 border-green-500 border-solid' : 'bg-slate-50 border-slate-800 border-dashed hover:bg-slate-100/50'}`}>
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-slate-800 text-white font-black rounded-full flex items-center justify-center shrink-0">{slot.sila}</div>
+                        <p className="text-slate-800 font-extrabold text-xs md:text-sm leading-tight max-w-[170px] md:max-w-[220px]">{slot.bunyi}</p>
+                      </div>
+                      <div className="w-14 h-14 bg-white border-2 border-slate-800 rounded-xl flex items-center justify-center shrink-0 shadow-[inset_0_2px_4px_rgba(0,0,0,0.1)]">
+                        {isMatched ? <SilaIconSvg type={slot.simbol} /> : <span className="text-slate-300 font-black text-[9px]">Pilih</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <AnimatePresence>
+              {showVictoryModal && (
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                  <motion.div className="bg-white border-4 border-slate-800 p-8 rounded-[40px] max-w-md w-full text-center shadow-[10px_10px_0px_0px_rgba(30,41,59,1)]" initial={{ scale: 0.9 }} animate={{ scale: 1 }}>
+                    <span className="text-6xl block mb-4 animate-bounce">🏆</span>
+                    <h3 className="text-3xl font-black text-slate-800">LUAR BIASA!</h3>
+                    <p className="text-slate-600 font-extrabold text-sm mt-2">Kamu berhasil menyelesaikan game Dunia 1!</p>
+                    <button onClick={handleCompleteWorld1Rewards} className="w-full mt-6 bg-[#6BCB77] hover:bg-[#59B264] text-white font-extrabold text-lg py-4 rounded-2xl border-4 border-slate-800 shadow-[0_6px_0_0_#3B8A4C]">Klaim Lencana! 🎁</button>
+                  </motion.div>
+                </div>
+              )}
+            </AnimatePresence>
+          </motion.div>
+        )}
+
+        {/* ================= SCREEN 7: GAME 2 (DUNIA 2 - KOTAK DISIPLIN) ================= */}
+        {screen === 'game2' && (
+          <motion.div 
+            key="game2" 
+            className="min-h-screen p-4 z-10 w-full max-w-5xl mx-auto flex flex-col justify-between" 
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }}
+          >
+            <header className="flex justify-between items-center py-2 border-b-4 border-slate-800 bg-white rounded-2xl px-4 shadow-[2px_4px_0px_0px_rgba(30,41,59,1)]">
+              <button 
+                onClick={() => { playSoundEffect('click'); setScreen('dashboard'); }} 
+                className="bg-white hover:bg-slate-50 text-slate-800 font-extrabold px-3 py-1.5 rounded-lg border-2 border-slate-800 text-sm shadow-[1px_2px_0px_0px_rgba(30,41,59,1)] active:translate-y-0.5 active:shadow-none"
+              >
+                ◀ Keluar
+              </button>
+              <h3 className="font-extrabold text-slate-800 text-sm md:text-lg">Game 2: Kotak Disiplin Gara 🏠</h3>
+              <div className="text-right">
+                <span className="text-slate-500 text-[10px] font-black block leading-none">Tantangan:</span>
+                <span className="text-slate-800 font-black text-sm">{game2StoryIndex + 1} / 5</span>
+              </div>
+            </header>
+
+            {/* AREA UTAMA PEMILAHAN SIKAP */}
+            <div className="my-6 grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
+              
+              {/* KOTAK KIRI: TERTIB 👍 */}
+              <div className="bg-green-50 border-4 border-slate-800 rounded-[32px] p-6 text-center h-[220px] flex flex-col items-center justify-center relative shadow-[4px_6px_0px_0px_rgba(30,41,59,1)]">
+                <span className="text-6xl block animate-bounce">📦</span>
+                <span className="bg-[#6BCB77] text-white border-2 border-slate-800 font-black text-xs px-4 py-1.5 rounded-full mt-3 block uppercase tracking-wide">
+                  Kotak  Tertib 👍
+                </span>
+              </div>
+
+              {/* AREA TENGAH: KARTU SOAL MELUNCUR */}
+              <div className="flex flex-col items-center justify-center min-h-[300px]">
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={game2StoryIndex}
+                    variants={{
+                      center: { x: 0, opacity: 1, scale: 1 },
+                      left: { x: -200, opacity: 0, scale: 0.8 },
+                      right: { x: 200, opacity: 0, scale: 0.8 }
+                    }}
+                    animate={game2CardAnimState}
+                    transition={{ type: "spring", stiffness: 200, damping: 20 }}
+                    className="bg-white border-4 border-slate-800 rounded-[32px] p-6 w-full max-w-[240px] aspect-[3/4] flex flex-col items-center justify-between text-center shadow-[6px_8px_0px_0px_rgba(30,41,59,1)]"
+                  >
+                    <span className="text-6xl block mt-4 select-none">
+                      {game2Questions[game2StoryIndex].emoji}
+                    </span>
+                    <p className="text-slate-800 font-extrabold text-sm leading-snug px-1">
+                      "{game2Questions[game2StoryIndex].action}"
+                    </p>
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">
+                      Pilah Sikap Ini!
+                    </span>
+                  </motion.div>
+                </AnimatePresence>
+              </div>
+
+              {/* KOTAK KANAN: TIDAK TERTIB 👎 */}
+              <div className="bg-red-50 border-4 border-slate-800 rounded-[32px] p-6 text-center h-[220px] flex flex-col items-center justify-center relative shadow-[4px_6px_0px_0px_rgba(30,41,59,1)]">
+                <span className="text-6xl block animate-bounce">📦</span>
+                <span className="bg-red-500 text-white border-2 border-slate-800 font-black text-xs px-4 py-1.5 rounded-full mt-3 block uppercase tracking-wide">
+                  Tidak  Tertib 👎
+                </span>
+              </div>
+
+            </div>
+
+            {/* TOMBOL AKSI PEMILAHAN SIKAP */}
+            <div className="flex gap-4 max-w-md mx-auto w-full justify-center">
+              <button 
+                onClick={() => handleAnswerGame2(true)} 
+                className="flex-1 bg-[#6BCB77] hover:bg-[#59B264] text-white font-extrabold text-lg py-4 rounded-2xl border-4 border-slate-800 shadow-[0_6px_0_0_#3B8A4C] active:translate-y-1"
+              >
+                Tertib 👍
+              </button>
+              
+              <button 
+                onClick={() => handleAnswerGame2(false)} 
+                className="flex-1 bg-red-500 hover:bg-red-600 text-white font-extrabold text-lg py-4 rounded-2xl border-4 border-slate-800 shadow-[0_6px_0_0_#991B1B] active:translate-y-1"
+              >
+                Tidak  Tertib 👎
+              </button>
+            </div>
+          </motion.div>
+        )}
+
+        {/* ================= SCREEN 8: GAME 3 (MEMORY CARD KEBINEKAAN) ================= */}
+        {screen === 'gameMemory' && (
+          <motion.div key="gameMemory" className="min-h-screen p-4 z-10 w-full max-w-4xl mx-auto flex flex-col justify-between" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            <header className="flex justify-between items-center py-2 border-b-4 border-slate-800 bg-white rounded-2xl px-4 shadow-[2px_4px_0px_0px_rgba(30,41,59,1)]">
+              <button onClick={() => { playSoundEffect('click'); setScreen('dashboard'); }} className="bg-white hover:bg-slate-50 text-slate-800 font-extrabold px-3 py-1.5 rounded-lg border-2 border-slate-800 text-sm">◀ Keluar</button>
+              <h3 className="font-extrabold text-slate-800 text-sm md:text-lg">Game 3: Memori Persahabatan Nusantara</h3>
+              <div className="text-right">
+                <span className="text-slate-500 text-[10px] font-black block">Salah Coba:</span>
+                <span className="text-red-500 font-black text-sm">{memoryWrongAttempts} Kali</span>
+              </div>
+            </header>
+
+            {/* GRID MEMORY CARD */}
+            <div className="my-6 bg-white border-4 border-slate-800 rounded-[32px] p-6 shadow-[6px_6px_0px_0px_rgba(30,41,59,1)]">
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-4 max-w-2xl mx-auto">
+                {memoryCards.map((card, idx) => {
+                  const isOpen = card.isFlipped || card.isMatched;
+                  return (
+                    <motion.div
+                      key={card.uniqueId}
+                      onClick={() => handleCardClick(idx)}
+                      className={`aspect-square rounded-2xl border-4 border-slate-800 flex flex-col items-center justify-center cursor-pointer transition-all ${isOpen ? 'bg-blue-50 shadow-none' : 'bg-[#4F9CF9] text-white shadow-[2px_4px_0px_0px_rgba(30,41,59,1)]'}`}
+                      whileHover={{ scale: 1.05 }}
+                    >
+                      {isOpen ? (
+                        <div className="text-center">
+                          <span className="text-4xl md:text-5xl block">{card.symbol}</span>
+                          <span className="text-[10px] md:text-xs font-black text-slate-600 block mt-1 uppercase">{card.text}</span>
+                        </div>
+                      ) : (
+                        <div className="text-center">
+                          <span className="text-3xl md:text-4xl block">🇮🇩</span>
+                          <span className="text-[9px] font-black tracking-widest block mt-1 uppercase">Pancasila</span>
+                        </div>
+                      )}
+                    </motion.div>
+                  );
+                })}
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {/* ================= SCREEN 9: GAME 4 (DUNIA 4 - PILAH SAMPAH) ================= */}
+        {screen === 'game4' && (
+          <motion.div key="game4" className="min-h-screen p-4 z-10 w-full max-w-4xl mx-auto flex flex-col justify-between" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            <header className="flex justify-between items-center py-2 border-b-4 border-slate-800 bg-white rounded-2xl px-4">
+              <button onClick={() => { playSoundEffect('click'); setScreen('dashboard'); }} className="bg-white hover:bg-slate-50 text-slate-800 font-extrabold px-3 py-1.5 rounded-lg border-2 border-slate-800 text-sm">◀ Keluar</button>
+              <h3 className="font-extrabold text-slate-800 text-sm md:text-lg">Game 4: Pilah Sampah Gotong Royong</h3>
+              <div className="text-right">
+                <span className="text-slate-500 text-[10px] font-black block">Sampah Pilahan:</span>
+                <span className="text-slate-800 font-black text-sm">{game4TrashIndex + 1} / 5</span>
+              </div>
+            </header>
+
+            <div className="my-6 bg-white border-4 border-slate-800 rounded-[32px] p-8 shadow-[6px_6px_0px_0px_rgba(30,41,59,1)] text-center">
+              <span className="text-6xl block mb-4">🍂</span>
+              <h3 className="text-2xl font-black text-slate-800 mb-6">Pilah: "{game4TrashItems[game4TrashIndex].name}"</h3>
+
+              <div className="flex gap-4 max-w-sm mx-auto">
+                <button onClick={() => handleAnswerGame4(true)} className="flex-1 bg-[#6BCB77] text-white font-extrabold text-lg py-4 rounded-2xl border-4 border-slate-800 shadow-[0_6px_0_0_#3B8A4C] active:translate-y-1">Organik 🍎</button>
+                <button onClick={() => handleAnswerGame4(false)} className="flex-1 bg-amber-500 text-white font-extrabold text-lg py-4 rounded-2xl border-4 border-slate-800 shadow-[0_6px_0_0_#B45309] active:translate-y-1">Anorganik 🍾</button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {/* ================= SCREEN 10: MINI-GAME PILIH SIKAP YANG TEPAT ================= */}
+        {screen === 'gamePilihSikap' && (
+          <motion.div 
+            key="gamePilihSikap"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0 }}
+            className="min-h-screen p-4 z-10 w-full max-w-4xl mx-auto flex flex-col justify-between"
+          >
+            <header className="flex justify-between items-center py-2 border-b-4 border-slate-800 bg-white rounded-2xl px-4 shadow-[2px_4px_0px_0px_rgba(30,41,59,1)]">
+              <button 
+                onClick={() => { playSoundEffect('click'); setScreen('dashboard'); }} 
+                className="bg-white hover:bg-slate-50 text-slate-800 font-extrabold px-3 py-1.5 rounded-lg border-2 border-slate-800 text-sm shadow-[1px_2px_0px_0px_rgba(30,41,59,1)]"
+              >
+                ◀ Peta
+              </button>
+              <h3 className="font-extrabold text-slate-800 text-xs md:text-sm lg:text-base">Misi: Pilih Sikap yang Terpuji! 🌟</h3>
+              <div className="text-right">
+                <span className="text-slate-500 text-[10px] font-black block leading-none">Pertanyaan:</span>
+                <span className="text-slate-800 font-black text-sm">{pilihSikapIndex + 1} / {pilihSikapQuestions.length}</span>
+              </div>
+            </header>
+
+            {pilihSikapQuestions.length > 0 && (
+              <div className="my-6 bg-white border-4 border-slate-800 rounded-[32px] p-6 shadow-[6px_6px_0px_0px_rgba(30,41,59,1)] flex flex-col items-center">
+                <motion.div 
+                  animate={{ y: [-5, 5, -5] }}
+                  transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}
+                  className="w-20 h-20 bg-amber-100 border-4 border-slate-800 rounded-full flex items-center justify-center text-4xl shadow-[2px_2px_0px_0px_rgba(30,41,59,1)] mb-4"
+                >
+                  {pilihSikapQuestions[pilihSikapIndex].emoji}
+                </motion.div>
+
+                <div className="bg-sky-50 border-3 border-slate-800 p-4 rounded-2xl max-w-2xl text-center mb-6 shadow-[inset_0_2px_4px_rgba(0,0,0,0.05)]">
+                  <span className="text-[10px] font-black text-[#4F9CF9] uppercase tracking-wider block mb-1">
+                    Apa yang harus kamu lakukan?
+                  </span>
+                  <p className="text-slate-800 font-extrabold text-base md:text-lg leading-relaxed">
+                    "{pilihSikapQuestions[pilihSikapIndex].scenario}"
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-3xl">
+                  <motion.button
+                    onClick={() => handleChooseSikapOption(pilihSikapQuestions[pilihSikapIndex].optionA)}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    className="bg-white hover:bg-slate-50 border-4 border-slate-800 rounded-2xl p-4 text-left shadow-[4px_4px_0px_0px_rgba(30,41,59,1)] active:translate-y-0.5 active:shadow-none flex items-start gap-3 transition-all"
+                  >
+                    <div className="w-8 h-8 bg-red-100 border-2 border-slate-800 rounded-full flex items-center justify-center font-black text-slate-800 text-sm shrink-0">
+                      A
+                    </div>
+                    <p className="text-slate-700 font-extrabold text-xs md:text-sm leading-snug">
+                      {pilihSikapQuestions[pilihSikapIndex].optionA.text}
+                    </p>
+                  </motion.button>
+
+                  <motion.button
+                    onClick={() => handleChooseSikapOption(pilihSikapQuestions[pilihSikapIndex].optionB)}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    className="bg-white hover:bg-slate-50 border-4 border-slate-800 rounded-2xl p-4 text-left shadow-[4px_4px_0px_0px_rgba(30,41,59,1)] active:translate-y-0.5 active:shadow-none flex items-start gap-3 transition-all"
+                  >
+                    <div className="w-8 h-8 bg-green-100 border-2 border-slate-800 rounded-full flex items-center justify-center font-black text-slate-800 text-sm shrink-0">
+                      B
+                    </div>
+                    <p className="text-slate-700 font-extrabold text-xs md:text-sm leading-snug">
+                      {pilihSikapQuestions[pilihSikapIndex].optionB.text}
+                    </p>
+                  </motion.button>
+                </div>
+              </div>
+            )}
+          </motion.div>
+        )}
+
+        {/* ================= SCREEN 11: MINI-GAME KELOMPOKKAN ATURAN (DUNIA 2) ================= */}
+        {screen === 'gameKelompokAturan' && (
+          <motion.div 
+            key="gameKelompokAturan"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0 }}
+            className="min-h-screen p-4 z-10 w-full max-w-4xl mx-auto flex flex-col justify-between"
+          >
+            <header className="flex justify-between items-center py-2 border-b-4 border-slate-800 bg-white rounded-2xl px-4 shadow-[2px_4px_0px_0px_rgba(30,41,59,1)]">
+              <button 
+                onClick={() => { playSoundEffect('click'); setScreen('dashboard'); }} 
+                className="bg-white hover:bg-slate-50 text-slate-800 font-extrabold px-3 py-1.5 rounded-lg border-2 border-slate-800 text-sm shadow-[1px_2px_0px_0px_rgba(30,41,59,1)]"
+              >
+                ◀ Peta
+              </button>
+              <h3 className="font-extrabold text-slate-800 text-xs md:text-sm lg:text-base">Misi: Kelompokkan Aturan Sekolah & Rumah! 🏡🏫</h3>
+              <div className="text-right">
+                <span className="text-slate-500 text-[10px] font-black block leading-none">Tantangan:</span>
+                <span className="text-slate-800 font-black text-sm">{currentAturanIndex + 1} / {aturanItems.length}</span>
+              </div>
+            </header>
+
+            {aturanItems.length > 0 && (
+              <div className="my-6 bg-white border-4 border-slate-800 rounded-[32px] p-6 shadow-[6px_6px_0px_0px_rgba(30,41,59,1)] flex flex-col items-center">
+                
+                <motion.div 
+                  animate={{ scale: [1, 1.1, 1] }}
+                  transition={{ repeat: Infinity, duration: 1.5, ease: "easeInOut" }}
+                  className="w-20 h-20 bg-emerald-100 border-4 border-slate-800 rounded-full flex items-center justify-center text-4xl shadow-[2px_2px_0px_0px_rgba(30,41,59,1)] mb-4"
+                >
+                  {aturanItems[currentAturanIndex].emoji}
+                </motion.div>
+
+                <div className="bg-slate-50 border-3 border-slate-800 p-4 rounded-2xl max-w-2xl text-center mb-6 shadow-[inset_0_2px_4px_rgba(0,0,0,0.05)]">
+                  <span className="text-[10px] font-black text-[#6BCB77] uppercase tracking-wider block mb-1">
+                    Pilah Aturan di Bawah Ini:
+                  </span>
+                  <p className="text-slate-800 font-extrabold text-base md:text-lg leading-relaxed">
+                    "{aturanItems[currentAturanIndex].ruleText}"
+                  </p>
+                </div>
+
+                {aturanFeedback && (
+                  <motion.div 
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className={`p-3 rounded-xl border-2 border-dashed text-center font-bold text-xs mb-6 max-w-lg ${
+                      aturanFeedback.startsWith('❌') 
+                        ? 'bg-red-50 border-red-300 text-red-800' 
+                        : 'bg-green-50 border-green-300 text-green-800'
+                    }`}
+                  >
+                    {aturanFeedback}
+                  </motion.div>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-3xl">
+                  <motion.button
+                    onClick={() => handleAnswerAturanKelompok('rumah')}
+                    whileHover={{ scale: 1.03 }}
+                    whileTap={{ scale: 0.97 }}
+                    className="bg-gradient-to-b from-amber-50 to-orange-100 border-4 border-slate-800 rounded-[28px] p-6 flex flex-col items-center justify-center shadow-[4px_6px_0px_0px_rgba(30,41,59,1)] active:translate-y-0.5 active:shadow-none relative overflow-hidden"
+                  >
+                    <span className="text-5xl block select-none">🏡</span>
+                    <span className="bg-[#FF8E3C] text-white border-2 border-slate-800 font-black text-sm px-5 py-1.5 rounded-full mt-3 block uppercase tracking-wide">
+                      Aturan di Rumah
+                    </span>
+                  </motion.button>
+
+                  <motion.button
+                    onClick={() => handleAnswerAturanKelompok('sekolah')}
+                    whileHover={{ scale: 1.03 }}
+                    whileTap={{ scale: 0.97 }}
+                    className="bg-gradient-to-b from-sky-50 to-blue-100 border-4 border-slate-800 rounded-[28px] p-6 flex flex-col items-center justify-center shadow-[4px_6px_0px_0px_rgba(30,41,59,1)] active:translate-y-0.5 active:shadow-none relative overflow-hidden"
+                  >
+                    <span className="text-5xl block select-none">🏫</span>
+                    <span className="bg-[#4F9CF9] text-white border-2 border-slate-800 font-black text-sm px-5 py-1.5 rounded-full mt-3 block uppercase tracking-wide">
+                      Aturan di Sekolah
+                    </span>
+                  </motion.button>
+                </div>
+              </div>
+            )}
+          </motion.div>
+        )}
+
+        {/* ================= SCREEN 15: MINI-GAME SIKAP KERJASAMA (DUNIA 4) ================= */}
+        {screen === 'gameKerjasama' && (
+          <motion.div 
+            key="gameKerjasama"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0 }}
+            className="min-h-screen p-4 z-10 w-full max-w-4xl mx-auto flex flex-col justify-between"
+          >
+            <header className="flex justify-between items-center py-2 border-b-4 border-slate-800 bg-white rounded-2xl px-4 shadow-[2px_4px_0px_0px_rgba(30,41,59,1)]">
+              <button 
+                onClick={() => { playSoundEffect('click'); setScreen('dashboard'); }} 
+                className="bg-white hover:bg-slate-50 text-slate-800 font-extrabold px-3 py-1.5 rounded-lg border-2 border-slate-800 text-sm shadow-[1px_2px_0px_0px_rgba(30,41,59,1)]"
+              >
+                ◀ Peta
+              </button>
+              <h3 className="font-extrabold text-slate-800 text-xs md:text-sm lg:text-base">Misi: Temukan Sikap Kerjasama! 🤝</h3>
+              <div className="text-right">
+                <span className="text-slate-500 text-[10px] font-black block leading-none">Pertanyaan:</span>
+                <span className="text-slate-800 font-black text-sm">{kerjasamaIndex + 1} / {kerjasamaQuestions.length}</span>
+              </div>
+            </header>
+
+            {kerjasamaQuestions.length > 0 && (
+              <div className="my-6 bg-white border-4 border-slate-800 rounded-[32px] p-6 shadow-[6px_6px_0px_0px_rgba(30,41,59,1)] flex flex-col items-center">
+                <motion.div 
+                  animate={{ y: [-5, 5, -5] }}
+                  transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}
+                  className="w-20 h-20 bg-teal-100 border-4 border-slate-800 rounded-full flex items-center justify-center text-4xl shadow-[2px_2px_0px_0px_rgba(30,41,59,1)] mb-4"
+                >
+                  {kerjasamaQuestions[kerjasamaIndex].emoji}
+                </motion.div>
+
+                <div className="bg-emerald-50 border-3 border-slate-800 p-4 rounded-2xl max-w-2xl text-center mb-6 shadow-[inset_0_2px_4px_rgba(0,0,0,0.05)]">
+                  <span className="text-[10px] font-black text-[#059669] uppercase tracking-wider block mb-1">
+                    Saat peristiwa ini terjadi...
+                  </span>
+                  <p className="text-slate-800 font-extrabold text-base md:text-lg leading-relaxed">
+                    "{kerjasamaQuestions[kerjasamaIndex].scenario}"
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-3xl">
+                  <motion.button
+                    onClick={() => handleChooseKerjasamaOption(kerjasamaQuestions[kerjasamaIndex].optionA)}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    className="bg-white hover:bg-slate-50 border-4 border-slate-800 rounded-2xl p-4 text-left shadow-[4px_4px_0px_0px_rgba(30,41,59,1)] active:translate-y-0.5 active:shadow-none flex items-start gap-3 transition-all"
+                  >
+                    <div className="w-8 h-8 bg-red-100 border-2 border-slate-800 rounded-full flex items-center justify-center font-black text-slate-800 text-sm shrink-0">
+                      A
+                    </div>
+                    <p className="text-slate-700 font-extrabold text-xs md:text-sm leading-snug">
+                      {kerjasamaQuestions[kerjasamaIndex].optionA.text}
+                    </p>
+                  </motion.button>
+
+                  <motion.button
+                    onClick={() => handleChooseKerjasamaOption(kerjasamaQuestions[kerjasamaIndex].optionB)}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    className="bg-white hover:bg-slate-50 border-4 border-slate-800 rounded-2xl p-4 text-left shadow-[4px_4px_0px_0px_rgba(30,41,59,1)] active:translate-y-0.5 active:shadow-none flex items-start gap-3 transition-all"
+                  >
+                    <div className="w-8 h-8 bg-green-100 border-2 border-slate-800 rounded-full flex items-center justify-center font-black text-slate-800 text-sm shrink-0">
+                      B
+                    </div>
+                    <p className="text-slate-700 font-extrabold text-xs md:text-sm leading-snug">
+                      {kerjasamaQuestions[kerjasamaIndex].optionB.text}
+                    </p>
+                  </motion.button>
+                </div>
+              </div>
+            )}
+          </motion.div>
+        )}
+
+        {/* ================= SCREEN 12: NEW WORLD 2 INTERACTIVE REWARD CORNER ================= */}
+        {screen === 'rewardWorld2' && (
+          <motion.div 
+            key="rewardWorld2"
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0 }}
+            className="min-h-screen p-4 z-10 w-full max-w-4xl mx-auto flex flex-col justify-center items-center"
+          >
+            <div className="bg-white border-4 border-slate-800 rounded-[40px] p-8 w-full max-w-2xl shadow-[10px_10px_0px_0px_rgba(30,41,59,1)] relative overflow-hidden text-center flex flex-col items-center justify-center">
+              <div className="absolute top-0 left-0 right-0 h-4 bg-gradient-to-r from-red-500 via-white to-red-500 border-b-4 border-slate-800" />
+
+              {!rewardWorld2ChestOpen ? (
+                <div className="space-y-6 my-6">
+                  <span className="text-[#6BCB77] font-black text-xs tracking-widest uppercase block">MISI RUMAH TERTIB SELESAI!</span>
+                  <h2 className="text-3xl md:text-4xl font-black text-slate-800 leading-tight">ADA PETI HADIAH UNTUKMU!</h2>
+                  
+                  <p className="text-slate-500 font-extrabold text-sm max-w-md mx-auto">
+                    Ketuk peti harta karun di bawah ini untuk membuka rahasia penghargaan lencana kedisiplinanmu!
+                  </p>
+
+                  <motion.div 
+                    onClick={handleOpenRewardChest}
+                    className="cursor-pointer inline-block"
+                    whileHover={{ scale: 1.08, rotate: [0, -3, 3, -3, 0] }}
+                    whileTap={{ scale: 0.95 }}
+                    animate={{ y: [0, -6, 0] }}
+                    transition={{ y: { repeat: Infinity, duration: 2, ease: "easeInOut" } }}
+                  >
+                    <TreasureChestSvg isOpen={false} />
+                  </motion.div>
+
+                  <p className="text-amber-500 font-black text-xs uppercase animate-pulse">
+                    👉 KETUK PETI UNTUK MEMBUKA HADIAH! 👈
+                  </p>
+                </div>
+              ) : (
+                <motion.div 
+                  initial={{ opacity: 0, y: 30 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="space-y-6 w-full"
+                >
+                  <span className="text-[#FF8E3C] font-black text-xs tracking-widest uppercase block animate-bounce">LENCANA BARU BERHASIL DIBUKA!</span>
+                  <h2 className="text-3xl md:text-4xl font-black text-slate-800 leading-none">KAMU ANAK YANG DISIPLIN!</h2>
+
+                  <div className="flex flex-col sm:flex-row items-center justify-center gap-8 my-6">
+                    <div className="relative">
+                      <TreasureChestSvg isOpen={true} />
+                    </div>
+
+                    <motion.div 
+                      className="w-40 h-40 bg-gradient-to-tr from-amber-100 to-yellow-300 border-4 border-slate-800 rounded-[32px] p-4 flex flex-col items-center justify-center shadow-[4px_6px_0px_0px_rgba(30,41,59,1)] relative"
+                      animate={{ rotate: [0, 360], scale: [1, 1.08, 1] }}
+                      transition={{ rotate: { duration: 15, repeat: Infinity, ease: "linear" }, scale: { duration: 3, repeat: Infinity } }}
+                    >
+                      <span className="text-6xl block">🏠</span>
+                      <span className="bg-slate-800 text-white font-black text-[9px] px-2 py-0.5 rounded-full border border-slate-600 absolute bottom-3">
+                        ANAK TERTIB
+                      </span>
+                    </motion.div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 max-w-md mx-auto">
+                    <div className="bg-slate-50 border-3 border-slate-800 p-4 rounded-2xl text-center">
+                      <span className="text-2xl block mb-1">✨</span>
+                      <span className="text-slate-400 font-black text-[9px] uppercase block leading-none">HADIAH XP</span>
+                      <span className="text-[#6BCB77] font-black text-lg">+{rewardWorld2CounterXp} XP</span>
+                    </div>
+
+                    <div className="bg-slate-50 border-3 border-slate-800 p-4 rounded-2xl text-center">
+                      <span className="text-2xl block mb-1">⭐</span>
+                      <span className="text-slate-400 font-black text-[9px] uppercase block leading-none">BINTANG PENILAIAN</span>
+                      <span className="text-amber-400 font-black text-lg block tracking-widest">
+                        {rewardWorld2Stars === 3 ? "⭐⭐⭐" : rewardWorld2Stars === 2 ? "⭐⭐" : "⭐"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <p className="text-slate-500 font-extrabold text-sm max-w-md mx-auto">
+                    Hebat, <span className="text-[#4F9CF9]">{playerName}</span>! Gara sangat bangga dengan kemandirian belajarmu. Dunia berikutnya sudah siap terbuka di peta Nusantara!
+                  </p>
+
+                  <button 
+                    onClick={handleClaimWorld2FinalRewards}
+                    className="w-full max-w-sm bg-[#6BCB77] hover:bg-[#59B264] text-white font-black py-4 rounded-2xl border-4 border-slate-800 shadow-[0_6px_0_0_#3B8A4C] active:translate-y-1 active:shadow-[0_2px_0_0_#3B8A4C] text-lg uppercase tracking-wide"
+                  >
+                    Klaim & Lanjut Petualangan! 🚀
+                  </button>
+                </motion.div>
+              )}
+            </div>
+          </motion.div>
+        )}
+
+        {/* ================= SCREEN 13: NEW WORLD 3 INTERACTIVE REWARD CORNER ================= */}
+        {screen === 'rewardWorld3' && (
+          <motion.div 
+            key="rewardWorld3"
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0 }}
+            className="min-h-screen p-4 z-10 w-full max-w-4xl mx-auto flex flex-col justify-center items-center"
+          >
+            <div className="bg-white border-4 border-slate-800 rounded-[40px] p-8 w-full max-w-2xl shadow-[10px_10px_0px_0px_rgba(30,41,59,1)] relative overflow-hidden text-center flex flex-col items-center justify-center">
+              <div className="absolute top-0 left-0 right-0 h-4 bg-gradient-to-r from-blue-400 via-sky-300 to-blue-400 border-b-4 border-slate-800" />
+
+              {!rewardWorld3ChestOpen ? (
+                <div className="space-y-6 my-6">
+                  <span className="text-[#4F9CF9] font-black text-xs tracking-widest uppercase block">MISI FESTIVAL NUSANTARA SELESAI!</span>
+                  <h2 className="text-3xl md:text-4xl font-black text-slate-800 leading-tight">ADA PETI HADIAH UNTUKMU!</h2>
+                  
+                  <p className="text-slate-500 font-extrabold text-sm max-w-md mx-auto">
+                    Buka peti harta karun ini untuk mendapatkan lencana persahabatan dari seluruh anak-anak Nusantara!
+                  </p>
+
+                  <motion.div 
+                    onClick={handleOpenRewardChest3}
+                    className="cursor-pointer inline-block"
+                    whileHover={{ scale: 1.08, rotate: [0, -3, 3, -3, 0] }}
+                    whileTap={{ scale: 0.95 }}
+                    animate={{ y: [0, -6, 0] }}
+                    transition={{ y: { repeat: Infinity, duration: 2, ease: "easeInOut" } }}
+                  >
+                    <TreasureChestSvg isOpen={false} />
+                  </motion.div>
+
+                  <p className="text-blue-500 font-black text-xs uppercase animate-pulse">
+                    👉 KETUK PETI UNTUK MEMBUKA HADIAH! 👈
+                  </p>
+                </div>
+              ) : (
+                <motion.div 
+                  initial={{ opacity: 0, y: 30 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="space-y-6 w-full"
+                >
+                  <span className="text-[#FF8E3C] font-black text-xs tracking-widest uppercase block animate-bounce">LENCANA BARU BERHASIL DIBUKA!</span>
+                  <h2 className="text-3xl md:text-4xl font-black text-slate-800 leading-none">TEMAN KEBERAGAMAN!</h2>
+
+                  <div className="flex flex-col sm:flex-row items-center justify-center gap-8 my-6">
+                    <div className="relative">
+                      <TreasureChestSvg isOpen={true} />
+                    </div>
+
+                    <motion.div 
+                      className="w-40 h-40 bg-gradient-to-tr from-sky-100 to-blue-300 border-4 border-slate-800 rounded-[32px] p-4 flex flex-col items-center justify-center shadow-[4px_6px_0px_0px_rgba(30,41,59,1)] relative"
+                      animate={{ rotate: [0, 360], scale: [1, 1.08, 1] }}
+                      transition={{ rotate: { duration: 15, repeat: Infinity, ease: "linear" }, scale: { duration: 3, repeat: Infinity } }}
+                    >
+                      <span className="text-6xl block">🤝</span>
+                      <span className="bg-slate-800 text-white font-black text-[9px] px-2 py-0.5 rounded-full border border-slate-600 absolute bottom-3">
+                        TEMAN KEBERAGAMAN
+                      </span>
+                    </motion.div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 max-w-md mx-auto">
+                    <div className="bg-slate-50 border-3 border-slate-800 p-4 rounded-2xl text-center">
+                      <span className="text-2xl block mb-1">✨</span>
+                      <span className="text-slate-400 font-black text-[9px] uppercase block leading-none">HADIAH XP</span>
+                      <span className="text-[#4F9CF9] font-black text-lg">+{rewardWorld3CounterXp} XP</span>
+                    </div>
+
+                    <div className="bg-slate-50 border-3 border-slate-800 p-4 rounded-2xl text-center">
+                      <span className="text-2xl block mb-1">⭐</span>
+                      <span className="text-slate-400 font-black text-[9px] uppercase block leading-none">BINTANG PENILAIAN</span>
+                      <span className="text-amber-400 font-black text-lg block tracking-widest">
+                        {rewardWorld3Stars === 3 ? "⭐⭐⭐" : rewardWorld3Stars === 2 ? "⭐⭐" : "⭐"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <p className="text-slate-500 font-extrabold text-sm max-w-md mx-auto">
+                    Hebat, <span className="text-[#4F9CF9]">{playerName}</span>! Kamu berhasil menyatukan perbedaan dan merajut toleransi di Festival Nusantara! Dunia berikutnya menantimu!
+                  </p>
+
+                  <button 
+                    onClick={handleClaimWorld3FinalRewards}
+                    className="w-full max-w-sm bg-[#4F9CF9] hover:bg-[#3b82f6] text-white font-black py-4 rounded-2xl border-4 border-slate-800 shadow-[0_6px_0_0_#2563eb] active:translate-y-1 active:shadow-[0_2px_0_0_#2563eb] text-lg uppercase tracking-wide"
+                  >
+                    Klaim & Lanjut Petualangan! 🚀
+                  </button>
+                </motion.div>
+              )}
+            </div>
+          </motion.div>
+        )}
+
+        {/* ================= SCREEN 14: NEW WORLD 4 INTERACTIVE REWARD CORNER ================= */}
+        {screen === 'rewardWorld4' && (
+          <motion.div 
+            key="rewardWorld4"
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0 }}
+            className="min-h-screen p-4 z-10 w-full max-w-4xl mx-auto flex flex-col justify-center items-center"
+          >
+            <div className="bg-white border-4 border-slate-800 rounded-[40px] p-8 w-full max-w-2xl shadow-[10px_10px_0px_0px_rgba(30,41,59,1)] relative overflow-hidden text-center flex flex-col items-center justify-center">
+              <div className="absolute top-0 left-0 right-0 h-4 bg-gradient-to-r from-teal-400 via-emerald-300 to-teal-400 border-b-4 border-slate-800" />
+
+              {!rewardWorld4ChestOpen ? (
+                <div className="space-y-6 my-6">
+                  <span className="text-[#14B8A6] font-black text-xs tracking-widest uppercase block">MISI INDONESIA HIJAU SELESAI!</span>
+                  <h2 className="text-3xl md:text-4xl font-black text-slate-800 leading-tight">ADA PETI HADIAH UNTUKMU!</h2>
+                  
+                  <p className="text-slate-500 font-extrabold text-sm max-w-md mx-auto">
+                    Buka peti harta karun ini untuk mendapatkan lencana pahlawan lingkungan Nusantara!
+                  </p>
+
+                  <motion.div 
+                    onClick={handleOpenRewardChest4}
+                    className="cursor-pointer inline-block"
+                    whileHover={{ scale: 1.08, rotate: [0, -3, 3, -3, 0] }}
+                    whileTap={{ scale: 0.95 }}
+                    animate={{ y: [0, -6, 0] }}
+                    transition={{ y: { repeat: Infinity, duration: 2, ease: "easeInOut" } }}
+                  >
+                    <TreasureChestSvg isOpen={false} />
+                  </motion.div>
+
+                  <p className="text-teal-500 font-black text-xs uppercase animate-pulse">
+                    👉 KETUK PETI UNTUK MEMBUKA HADIAH! 👈
+                  </p>
+                </div>
+              ) : (
+                <motion.div 
+                  initial={{ opacity: 0, y: 30 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="space-y-6 w-full"
+                >
+                  <span className="text-[#FF8E3C] font-black text-xs tracking-widest uppercase block animate-bounce">LENCANA BARU BERHASIL DIBUKA!</span>
+                  <h2 className="text-3xl md:text-4xl font-black text-slate-800 leading-none">PENJAGA LINGKUNGAN!</h2>
+
+                  <div className="flex flex-col sm:flex-row items-center justify-center gap-8 my-6">
+                    <div className="relative">
+                      <TreasureChestSvg isOpen={true} />
+                    </div>
+
+                    <motion.div 
+                      className="w-40 h-40 bg-gradient-to-tr from-teal-100 to-green-300 border-4 border-slate-800 rounded-[32px] p-4 flex flex-col items-center justify-center shadow-[4px_6px_0px_0px_rgba(30,41,59,1)] relative"
+                      animate={{ rotate: [0, 360], scale: [1, 1.08, 1] }}
+                      transition={{ rotate: { duration: 15, repeat: Infinity, ease: "linear" }, scale: { duration: 3, repeat: Infinity } }}
+                    >
+                      <span className="text-6xl block">🌱</span>
+                      <span className="bg-slate-800 text-white font-black text-[9px] px-2 py-0.5 rounded-full border border-slate-600 absolute bottom-3">
+                        PENJAGA BUMI
+                      </span>
+                    </motion.div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 max-w-md mx-auto">
+                    <div className="bg-slate-50 border-3 border-slate-800 p-4 rounded-2xl text-center">
+                      <span className="text-2xl block mb-1">✨</span>
+                      <span className="text-slate-400 font-black text-[9px] uppercase block leading-none">HADIAH XP</span>
+                      <span className="text-[#14B8A6] font-black text-lg">+{rewardWorld4CounterXp} XP</span>
+                    </div>
+
+                    <div className="bg-slate-50 border-3 border-slate-800 p-4 rounded-2xl text-center">
+                      <span className="text-2xl block mb-1">⭐</span>
+                      <span className="text-slate-400 font-black text-[9px] uppercase block leading-none">BINTANG PENILAIAN</span>
+                      <span className="text-amber-400 font-black text-lg block tracking-widest">
+                        {rewardWorld4Stars === 3 ? "⭐⭐⭐" : rewardWorld4Stars === 2 ? "⭐⭐" : "⭐"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <p className="text-slate-500 font-extrabold text-sm max-w-md mx-auto">
+                    Luar biasa, <span className="text-[#4F9CF9]">{playerName}</span>! Bumi Nusantara kita sekarang bersih dan hijau berkat aksi pilah sampah darimu! 
+                  </p>
+
+                  <button 
+                    onClick={handleClaimWorld4FinalRewards}
+                    className="w-full max-w-sm bg-[#14B8A6] hover:bg-[#0d9488] text-white font-black py-4 rounded-2xl border-4 border-slate-800 shadow-[0_6px_0_0_#0f766e] active:translate-y-1 active:shadow-[0_2px_0_0_#0f766e] text-lg uppercase tracking-wide"
+                  >
+                    Klaim & Kembali ke Peta! 🚀
+                  </button>
+                </motion.div>
+              )}
+            </div>
+          </motion.div>
+        )}
+
+        {/* ================= SCREEN 16: NEW WORLD 4 (KERJASAMA) INTERACTIVE REWARD CORNER ================= */}
+        {screen === 'rewardKerjasama' && (
+          <motion.div 
+            key="rewardKerjasama"
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0 }}
+            className="min-h-screen p-4 z-10 w-full max-w-4xl mx-auto flex flex-col justify-center items-center"
+          >
+            <div className="bg-white border-4 border-slate-800 rounded-[40px] p-8 w-full max-w-2xl shadow-[10px_10px_0px_0px_rgba(30,41,59,1)] relative overflow-hidden text-center flex flex-col items-center justify-center">
+              <div className="absolute top-0 left-0 right-0 h-4 bg-gradient-to-r from-emerald-400 via-teal-300 to-emerald-400 border-b-4 border-slate-800" />
+
+              {!rewardKerjasamaChestOpen ? (
+                <div className="space-y-6 my-6">
+                  <span className="text-[#059669] font-black text-xs tracking-widest uppercase block">MISI GOTONG ROYONG SELESAI!</span>
+                  <h2 className="text-3xl md:text-4xl font-black text-slate-800 leading-tight">ADA PETI HADIAH UNTUKMU!</h2>
+                  
+                  <p className="text-slate-500 font-extrabold text-sm max-w-md mx-auto">
+                    Buka peti harta karun ini untuk mendapatkan lencana pahlawan gotong royong dari warga desa!
+                  </p>
+
+                  <motion.div 
+                    onClick={handleOpenRewardChestKerjasama}
+                    className="cursor-pointer inline-block"
+                    whileHover={{ scale: 1.08, rotate: [0, -3, 3, -3, 0] }}
+                    whileTap={{ scale: 0.95 }}
+                    animate={{ y: [0, -6, 0] }}
+                    transition={{ y: { repeat: Infinity, duration: 2, ease: "easeInOut" } }}
+                  >
+                    <TreasureChestSvg isOpen={false} />
+                  </motion.div>
+
+                  <p className="text-emerald-600 font-black text-xs uppercase animate-pulse">
+                    👉 KETUK PETI UNTUK MEMBUKA HADIAH! 👈
+                  </p>
+                </div>
+              ) : (
+                <motion.div 
+                  initial={{ opacity: 0, y: 30 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="space-y-6 w-full"
+                >
+                  <span className="text-[#FF8E3C] font-black text-xs tracking-widest uppercase block animate-bounce">LENCANA BARU BERHASIL DIBUKA!</span>
+                  <h2 className="text-3xl md:text-4xl font-black text-slate-800 leading-none">PAHLAWAN KERJASAMA!</h2>
+
+                  <div className="flex flex-col sm:flex-row items-center justify-center gap-8 my-6">
+                    <div className="relative">
+                      <TreasureChestSvg isOpen={true} />
+                    </div>
+
+                    <motion.div 
+                      className="w-40 h-40 bg-gradient-to-tr from-emerald-100 to-teal-400 border-4 border-slate-800 rounded-[32px] p-4 flex flex-col items-center justify-center shadow-[4px_6px_0px_0px_rgba(30,41,59,1)] relative"
+                      animate={{ rotate: [0, 360], scale: [1, 1.08, 1] }}
+                      transition={{ rotate: { duration: 15, repeat: Infinity, ease: "linear" }, scale: { duration: 3, repeat: Infinity } }}
+                    >
+                      <span className="text-6xl block">🌱</span>
+                      <span className="bg-slate-800 text-white font-black text-[9px] px-2 py-0.5 rounded-full border border-slate-600 absolute bottom-3">
+                        PENJAGA BUMI
+                      </span>
+                    </motion.div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 max-w-md mx-auto">
+                    <div className="bg-slate-50 border-3 border-slate-800 p-4 rounded-2xl text-center">
+                      <span className="text-2xl block mb-1">✨</span>
+                      <span className="text-slate-400 font-black text-[9px] uppercase block leading-none">HADIAH XP</span>
+                      <span className="text-[#059669] font-black text-lg">+{rewardKerjasamaCounterXp} XP</span>
+                    </div>
+
+                    <div className="bg-slate-50 border-3 border-slate-800 p-4 rounded-2xl text-center">
+                      <span className="text-2xl block mb-1">⭐</span>
+                      <span className="text-slate-400 font-black text-[9px] uppercase block leading-none">BINTANG PENILAIAN</span>
+                      <span className="text-amber-400 font-black text-lg block tracking-widest">
+                        {rewardKerjasamaStars === 3 ? "⭐⭐⭐" : rewardKerjasamaStars === 2 ? "⭐⭐" : "⭐"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <p className="text-slate-500 font-extrabold text-sm max-w-md mx-auto">
+                    Keren banget, <span className="text-[#4F9CF9]">{playerName}</span>! Kamu selalu siap sedia membantu teman dan lingkungan. Sikap kerjasamamu pantas diacungi jempol!
+                  </p>
+
+                  <button 
+                    onClick={handleClaimKerjasamaFinalRewards}
+                    className="w-full max-w-sm bg-[#059669] hover:bg-[#047857] text-white font-black py-4 rounded-2xl border-4 border-slate-800 shadow-[0_6px_0_0_#064e3b] active:translate-y-1 active:shadow-[0_2px_0_0_#064e3b] text-lg uppercase tracking-wide"
+                  >
+                    Klaim & Kembali ke Peta! 🚀
+                  </button>
+                </motion.div>
+              )}
+            </div>
+          </motion.div>
+        )}
+
+        {/* ================= SCREEN 17: GRAND FINALE (SELEBRASI PUNCAK) ================= */}
+        {screen === 'grandFinale' && (
+          <motion.div
+            key="grandFinale"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="min-h-screen bg-gradient-to-b from-yellow-300 via-orange-400 to-red-500 p-4 flex flex-col items-center justify-center relative overflow-hidden"
+          >
+            {/* Animasi Hujan Confetti */}
+            {[...Array(40)].map((_, i) => (
+              <motion.div
+                key={i}
+                className="absolute w-3 h-6 rounded-sm z-0"
+                style={{
+                  backgroundColor: ['#4F9CF9', '#6BCB77', '#FFD93D', '#F8FAFC', '#FF8E3C'][i % 5],
+                  left: `${Math.random() * 100}%`,
+                  top: '-10%',
+                }}
+                animate={{
+                  y: ['0vh', '110vh'],
+                  x: [0, Math.random() * 100 - 50, Math.random() * 100 - 50],
+                  rotate: [0, 360],
+                }}
+                transition={{
+                  duration: 2.5 + Math.random() * 2.5,
+                  repeat: Infinity,
+                  ease: 'linear',
+                  delay: Math.random() * 2,
+                }}
+              />
+            ))}
+
+            <motion.div 
+              initial={{ scale: 0.5, y: 50 }}
+              animate={{ scale: 1, y: 0 }}
+              transition={{ type: "spring", stiffness: 200, damping: 20 }}
+              className="bg-white border-8 border-yellow-200 rounded-[40px] p-8 max-w-2xl w-full text-center shadow-2xl relative z-10 flex flex-col items-center"
+            >
+              <h1 className="text-4xl md:text-5xl font-black text-[#FF8E3C] mb-6 drop-shadow-md uppercase tracking-wider">
+                🎉 SELAMAT! 🎉
+              </h1>
+              
+              <div className="w-64 h-64 mb-6 relative">
+                {/* Efek Cahaya Bersinar di Belakang Gara */}
+                <motion.div 
+                  className="absolute inset-0 bg-yellow-300 rounded-full filter blur-3xl opacity-50"
+                  animate={{ scale: [1, 1.2, 1] }}
+                  transition={{ repeat: Infinity, duration: 2 }}
+                />
+                <GaraSvg pose="victory" />
+              </div>
+
+              <div className="bg-orange-50 border-4 border-[#FF8E3C] rounded-2xl p-6 mb-8 relative w-full shadow-inner">
+                <div className="absolute -top-5 left-1/2 transform -translate-x-1/2 bg-[#FF8E3C] text-white px-6 py-1 rounded-full font-black text-sm uppercase shadow-sm">
+                  Pesan Gara
+                </div>
+                <p className="text-xl md:text-2xl font-extrabold text-slate-800 leading-relaxed">
+                  "Selamat! Kamu telah membantu Gara menemukan seluruh bintang Pancasila dan menjadi Pahlawan Cilik Nusantara!"
+                </p>
+              </div>
+
+              <button 
+                onClick={() => {
+                  playSoundEffect('click');
+                  setScreen('dashboard');
+                }}
+                className="bg-[#6BCB77] hover:bg-[#59B264] text-white font-black py-4 px-12 rounded-3xl border-b-8 border-green-700 text-xl md:text-2xl shadow-lg transition-all active:border-b-0 active:translate-y-2 uppercase tracking-widest w-full md:w-auto"
+              >
+                KEMBALI KE PETA
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+
+        {/* ================= SCREEN: BADGE GALLERY ================= */}
+        {screen === 'badges' && (
+          <motion.div key="badges" initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="min-h-screen p-6 z-10 w-full max-w-4xl mx-auto flex flex-col">
+            <header className="flex justify-between items-center mb-8">
+              <button onClick={() => { playSoundEffect('click'); setScreen('dashboard'); }} className="bg-white hover:bg-slate-50 text-slate-800 font-extrabold px-5 py-2.5 rounded-xl border-3 border-slate-800 shadow-[2px_4px_0px_0px_rgba(30,41,59,1)]">◀ Peta</button>
+              <h2 className="text-2xl font-black text-slate-800 uppercase">Koleksi Lencana</h2>
+            </header>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
+              {allBadges.map((b) => {
+                const isOwned = badges.includes(b.id);
+                return (
+                  <div key={b.id} className={`bg-white border-4 border-slate-800 rounded-3xl p-6 flex flex-col items-center text-center shadow-[4px_4px_0px_0px_rgba(30,41,59,1)] ${isOwned ? '' : 'opacity-40 grayscale'}`}>
+                    <div className="w-24 h-24 rounded-full border-4 border-slate-800 bg-amber-50 flex items-center justify-center text-5xl mb-4 shadow-[2px_2px_0px_0px_rgba(30,41,59,1)]">{isOwned ? b.emoji : '🔒'}</div>
+                    <h4 className="font-extrabold text-slate-800 text-lg leading-tight">{b.name}</h4>
+                    <p className="text-slate-500 font-bold text-xs mt-1">{b.desc}</p>
+                  </div>
+                );
+              })}
+            </div>
+          </motion.div>
+        )}
+
+        {/* ================= SCREEN: PROFILE ================= */}
+        {screen === 'profile' && (
+          <motion.div key="profile" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="min-h-screen p-6 z-10 w-full max-w-xl mx-auto flex flex-col justify-center">
+            <div className="bg-white border-4 border-slate-800 rounded-3xl p-6 md:p-8 shadow-[8px_8px_0px_0px_rgba(30,41,59,1)] relative">
+              <button onClick={() => { playSoundEffect('click'); setScreen('dashboard'); }} className="absolute top-6 left-6 text-slate-500 font-extrabold text-base">◀ Kembali</button>
+              <div className="text-center mt-6 mb-8">
+                <div className="w-24 h-24 rounded-full border-4 border-slate-800 bg-[#E0F2FE] flex items-center justify-center text-5xl mx-auto mb-4">{getPlayerAvatarEmoji()}</div>
+                <h2 className="text-3xl font-extrabold text-slate-800 uppercase">{playerName}</h2>
+                <span className="bg-[#FF8E3C] text-white font-black text-xs px-3 py-1 rounded-full border border-slate-800 mt-2 inline-block">LVL {level} - Penjelajah</span>
+              </div>
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-slate-50 border-3 border-slate-800 p-4 rounded-2xl text-center">
+                    <span className="text-3xl block mb-1">✨</span>
+                    <span className="text-slate-800 font-extrabold text-lg">{xp} XP</span>
+                  </div>
+                  <div className="bg-slate-50 border-3 border-slate-800 p-4 rounded-2xl text-center">
+                    <span className="text-3xl block mb-1">🏝️</span>
+                    <span className="text-slate-800 font-extrabold text-lg">{completedWorlds.length} / 4</span>
+                  </div>
+                </div>
+                <button onClick={handleResetProgress} className="w-full bg-red-500 text-white font-extrabold py-3 rounded-2xl border-3 border-slate-800 shadow-[2px_4px_0px_0px_rgba(30,41,59,1)]">🔄 Mulai Ulang Petualangan</button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+      </AnimatePresence>
+    </div>
+  );
+}<html>
+
+</html>
